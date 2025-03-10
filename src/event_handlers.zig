@@ -148,7 +148,7 @@ pub fn handleNormalEvent(
                     }
 
                     var tmp_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                    const tmp_path = try app.alloc.dupe(u8, try std.fmt.bufPrint(&tmp_path_buf, "{s}/{s}-{s}", .{ trash_dir_path, entry.name, zuid.new.v4().toString() }));
+                    const tmp_path = try app.alloc.dupe(u8, try std.fmt.bufPrint(&tmp_path_buf, "{s}/{s}-{s}", .{ trash_dir_path, entry.name, zuid.new.v4().toArray() }));
 
                     if (app.directories.dir.rename(entry.name, tmp_path)) {
                         if (app.actions.push(.{

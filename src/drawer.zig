@@ -134,7 +134,7 @@ fn drawFilePreview(
             // Handle image.
             if (config.show_images == true) unsupported: {
                 var match = false;
-                inline for (@typeInfo(vaxis.zigimg.Image.Format).Enum.fields) |field| {
+                inline for (@typeInfo(vaxis.zigimg.Image.Format).@"enum".fields) |field| {
                     const entry_ext = std.mem.trimLeft(
                         u8,
                         std.fs.path.extension(entry.name),

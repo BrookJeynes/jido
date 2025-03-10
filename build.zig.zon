@@ -1,24 +1,28 @@
 .{
-    .name = "jido",
-    .version = "0.8.0",
-    .minimum_zig_version = "0.13.0",
+    .name = .jido,
+    .fingerprint = 0xee45eabe36cafb57,
+    .version = "0.8.1",
+    .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
         .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis#77f5795892b08cd64ad6a103f0c53a7d1db50b18",
-            .hash = "1220d587525255e734670ae74f38cb09d75df936c7889b07a6eab739c066dc736f85",
+            .url = "git+https://github.com/rockorager/libvaxis#1e24e0dfb509e974e1c8713bcd119d0ae032a8c7",
+            .hash = "vaxis-0.1.0-BWNV_MHyCAARemSCSwwc3sA1etNgv7ge0BCIXspX6CZv",
         },
         .fuzzig = .{
-            .url = "git+https://github.com/fjebaker/fuzzig#0fd156d5097365151e85a85eef9d8cf0eebe7b00",
-            .hash = "122019f077d09686b1ec47928ca2b4bf264422f3a27afc5b49dafb0129a4ceca0d01",
+            .url = "git+https://github.com/fjebaker/fuzzig#44c04733c7c0fee3db83672aaaaf4ed03e943156",
+            .hash = "fuzzig-0.1.1-AAAAALNIAQBmbHr-MPalGuR393Vem2pTQXI7_LXeNJgX",
         },
         .zuid = .{
-            .url = "git+https://github.com/KeithBrown39423/zuid#49e5980ba83f7d9ae967fa7ce4d54384c1c0f82b",
-            .hash = "1220e05a3f459c0adbf2b09b4764838833e3e716a712852aec6ef1636f4d8e9f646e",
+            .url = "git+https://github.com/KeithBrown39423/zuid#b6129f6cee45bd90b7ac97b8839dc28d21bedcb2",
+            .hash = "zuid-2.0.0-AAAAADxXAAA4MAzwwRhfZ9AC2FMPZ8hUrZbfpmJ_azpK",
         },
     },
 
     .paths = .{
-        "./src/",
+        "LICENSE",
+        "build.zig",
+        "build.zig.zon",
+        "src",
     },
 }
