@@ -44,6 +44,7 @@ u                  :Undo delete/rename.
 d                  :Create directory. Will enter input mode.
 %                  :Create file. Will enter input mode.
 /                  :Fuzzy search directory. Will enter input mode.
+.                  :Show/Hide hidden files.
 :                  :Allows for Jido commands to be entered. Please refer to the 
                     "Command mode" section for available commands. Will enter 
                     input mode.

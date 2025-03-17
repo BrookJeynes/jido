@@ -42,8 +42,10 @@ pub fn handleNormalEvent(
                         };
 
                         if (app.directories.history.pop()) |history| {
-                            app.directories.entries.selected = history.selected;
-                            app.directories.entries.offset = history.offset;
+                            if (history.selected < app.directories.entries.len()) {
+                                app.directories.entries.selected = history.selected;
+                                app.directories.entries.offset = history.offset;
+                            }
                         }
                     } else |err| {
                         switch (err) {
@@ -275,6 +277,36 @@ pub fn handleNormalEvent(
                     app.text_input.clearAndFree();
                     app.text_input.insertSliceAtCursor(":") catch {};
                     app.state = .command;
+                },
+                '.' => {
+                    config.show_hidden = !config.show_hidden;
+
+                    const prev_selected_name: []const u8, const prev_selected_err: bool = lbl: {
+                        const selected = app.directories.getSelected() catch break :lbl .{ "", true };
+                        if (selected == null) break :lbl .{ "", true };
+
+                        break :lbl .{ try app.alloc.dupe(u8, selected.?.name), false };
+                    };
+                    defer if (!prev_selected_err) app.alloc.free(prev_selected_name);
+
+                    app.directories.clearEntries();
+                    const fuzzy = inputToSlice(app);
+                    app.directories.populateEntries(fuzzy) catch |err| {
+                        switch (err) {
+                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                            else => try app.notification.writeErr(.UnknownError),
+                        }
+                    };
+
+                    for (app.directories.entries.all()) |entry| {
+                        // Update offset as we search for last selected entry.
+                        app.directories.entries.updateOffset(app.last_known_height, .next);
+                        if (std.mem.eql(u8, entry.name, prev_selected_name)) return;
+                        app.directories.entries.selected += 1;
+                    }
+
+                    // If it didn't find entry, reset selected.
+                    app.directories.entries.selected = 0;
                 },
                 else => {},
             }
