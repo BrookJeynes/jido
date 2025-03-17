@@ -80,6 +80,10 @@ pub fn populateChildEntries(
 
     var it = dir.iterate();
     while (try it.next()) |entry| {
+        if (std.mem.startsWith(u8, entry.name, ".") and config.show_hidden == false) {
+            continue;
+        }
+
         try self.child_entries.append(try self.alloc.dupe(u8, entry.name));
     }
 
@@ -115,6 +119,10 @@ pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
             continue;
         }
 
+        if (std.mem.startsWith(u8, entry.name, ".") and config.show_hidden == false) {
+            continue;
+        }
+
         try self.entries.append(.{
             .kind = entry.kind,
             .name = try self.alloc.dupe(u8, entry.name),
@@ -135,10 +143,6 @@ pub fn writeEntries(
     for (self.entries.all()[self.entries.offset..], 0..) |item, i| {
         const selected = self.entries.selected - self.entries.offset;
         const is_selected = selected == i;
-
-        if (std.mem.startsWith(u8, item.name, ".") and config.show_hidden == false) {
-            continue;
-        }
 
         if (i > window.height) continue;
 
