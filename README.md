@@ -29,8 +29,11 @@ via `zig build --release=safe`.
 
 ## Key manual
 ```
-Normal mode:
+Global:
 <CTRL-c>           :Exit.
+<CTRL-r>           :Reload config.
+
+Normal mode:
 j / <Down>         :Go down.
 k / <Up>           :Go up.
 h / <Left> / -     :Go to the parent directory.

@@ -19,11 +19,6 @@ pub fn handleNormalEvent(
 ) !void {
     switch (event) {
         .key_press => |key| {
-            if ((key.codepoint == 'c' and key.mods.ctrl)) {
-                app.should_quit = true;
-                return;
-            }
-
             switch (key.codepoint) {
                 '-', 'h', Key.left => {
                     app.text_input.clearAndFree();
@@ -318,11 +313,6 @@ pub fn handleNormalEvent(
 pub fn handleInputEvent(app: *App, event: App.Event) !void {
     switch (event) {
         .key_press => |key| {
-            if ((key.codepoint == 'c' and key.mods.ctrl)) {
-                app.should_quit = true;
-                return;
-            }
-
             switch (key.codepoint) {
                 Key.escape => {
                     switch (app.state) {

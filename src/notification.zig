@@ -40,6 +40,7 @@ const Info = enum {
     RestoredRename,
     EmptyUndo,
     ChangedDir,
+    ConfigReloaded,
 };
 
 const Warn = enum { DeprecatedConfigPath };
@@ -94,6 +95,7 @@ pub fn writeInfo(self: *Self, info: Info) !void {
         .RestoredRename => self.write("Successfully restored renamed item.", .info),
         .EmptyUndo => self.write("Nothing to undo.", .info),
         .ChangedDir => self.write("Successfully changed directory.", .info),
+        .ConfigReloaded => self.write("Successfully reloaded config.", .info),
     };
 }
 

@@ -126,6 +126,31 @@ pub fn run(self: *App) !void {
     while (!self.should_quit) {
         loop.pollEvent();
         while (loop.tryEvent()) |event| {
+            // Global keybinds.
+            switch (event) {
+                .key_press => |key| {
+                    if ((key.codepoint == 'c' and key.mods.ctrl)) {
+                        self.should_quit = true;
+                        return;
+                    }
+
+                    if ((key.codepoint == 'r' and key.mods.ctrl)) {
+                        if (config.parse(self.alloc)) {
+                            try self.notification.writeInfo(.ConfigReloaded);
+                        } else |err| switch (err) {
+                            error.SyntaxError => {
+                                try self.notification.writeErr(.ConfigSyntaxError);
+                            },
+                            else => {
+                                try self.notification.writeErr(.ConfigUnknownError);
+                            },
+                        }
+                    }
+                },
+                else => {},
+            }
+
+            // State specific keybinds.
             switch (self.state) {
                 .normal => {
                     try EventHandlers.handleNormalEvent(self, event, &loop);
