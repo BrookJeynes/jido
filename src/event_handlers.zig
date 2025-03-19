@@ -285,8 +285,7 @@ pub fn handleNormalEvent(
                     defer if (!prev_selected_err) app.alloc.free(prev_selected_name);
 
                     app.directories.clearEntries();
-                    const fuzzy = inputToSlice(app);
-                    app.directories.populateEntries(fuzzy) catch |err| {
+                    app.directories.populateEntries("") catch |err| {
                         switch (err) {
                             error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                             else => try app.notification.writeErr(.UnknownError),
