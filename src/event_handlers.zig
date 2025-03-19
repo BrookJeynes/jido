@@ -431,8 +431,10 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                         },
                         .command => {
                             const command = inputToSlice(app);
-                            if (app.command_history.push(try app.alloc.dupe(u8, command))) |deleted| {
-                                app.alloc.free(deleted);
+                            if (!std.mem.eql(u8, std.mem.trim(u8, command, " "), ":")) {
+                                if (app.command_history.push(try app.alloc.dupe(u8, command))) |deleted| {
+                                    app.alloc.free(deleted);
+                                }
                             }
 
                             supported: {
