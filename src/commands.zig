@@ -34,7 +34,7 @@ pub const CommandHistory = struct {
     }
 
     pub fn previous(self: *CommandHistory) ?[]const u8 {
-        if (self.selected + 1 == self.len) return null;
+        if (self.selected == self.len) return null;
         self.selected += 1;
         return self.history[self.selected];
     }
