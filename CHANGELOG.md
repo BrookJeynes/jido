@@ -1,0 +1,114 @@
+# Changelog
+
+## v0.8.3 (2025-03-19)
+- feat: Added keybind `<CTRL-r>` to reload config while Jido is running.
+- docs: Updated readme to mention new keybind.
+- docs: Reordered keybinds section to add "Global" section.
+
+## v0.8.2 (2025-03-18)
+- fix: Move logic to hide dot files from renderer to directory reader.
+  this moves the logic to hide dot files out from the renderer to the
+  directory reader. This means if hidden files are turned off, they aren't
+  even stored.
+- feat: Added keybind `.` to hide/show hidden files at runtime.
+  Default behaviour is still read from the config file if set.
+
+## v0.8.1 (2025-03-11)
+- feat: Jido is now built with zig 0.14.0.
+- chore: Update packages.
+
+## v0.8.0 (2025-01-07)
+- Rebrand from zfe to Jido by @BrookJeynes in #16
+  I felt that I wanted this project to have more of its own identity so I 
+  decided now that this project is getting closer to a v1.0 release, it's time 
+  to give it a proper name.
+- Added command mode by @BrookJeynes in #14
+  Command mode is a way for users to enter Jido commands. 
+  Currently supported commands:
+  ```
+  Command mode:
+  :q                 :Exit.
+  :config            :Navigate to config directory if it exists.
+  :trash             :Navigate to trash directory if it exists.
+  :empty_trash       :Empty trash if it exists. This action cannot be undone.
+  ```
+- Deletes are now sent to `<config>/trash` instead of `/tmp`. by @BrookJeynes in #15
+  Previously, deletes were sent to `/tmp`. This made it convenient for cleanup 
+  however caused issues on certain distros. This was because the `/tmp` dir was 
+  on a separate mount point and therefore the file was unable to be moved there. 
+  Tying into this, there is now a new `empty_trash_on_exit` config option set to 
+  false by default.
+- Reworked the notification stylings. Notification stylings are now under the 
+  notification namespace within the config file.
+- The code used to detect the git branch no longer needs git installed on the 
+  system.
+- Displayed file size now shows the correct file size for files.
+
+## v0.7.0 (2025-01-01)
+- Fix notification segfaults by @BrookJeynes in #9
+- Conform codebase styling by @BrookJeynes in #10
+- Create release action by @BrookJeynes in #11
+- Separate event and draw logic by @BrookJeynes in #12
+- Updated config location from `$HOME/.config/zfe` to `$HOME/.zfe` by @BrookJeynes in 3cb9bb2
+    - This means that the config can be found at either `$HOME/.zfe/` or 
+      `$XDG_CONFIG_HOME/zfe/config/`. The old path will continue to work for 
+      the meantime but has been deprecated.
+- Show git branch when available by @BrookJeynes in #13
+
+## v0.6.1 (2024-12-03)
+- Updated libvaxis and refactored build.zig by @BrookJeynes in #7
+- Notifications are now their own windows that appear to the right by @BrookJeynes in #8
+    - Notifications are now their own windows that appear to the right of the 
+      screen. they disappear after 3 seconds but note that renders only occur 
+      after an action has been polled. this means that if you wait for 3 seconds 
+      without an action, the notification wont disappear until an action occurs.
+    - Added info notifications on actions such as renaming, deleting, changing 
+      dir, etc.
+    - Added notification_box colour setting to config.
+
+## v0.5.0 (2024-06-05)
+- Updated libvaxis dependency.
+- Fixed an issue where viewing a PDF would freeze zfe. This fixes issue #5
+- Added additional "Optional Dependencies" section to README to specify optional 
+  dependencies for zfe (such as pdftotext for PDF viewing).
+- Updated the way images are streamed in. This should help with #4 but I don't 
+  think it ultimately fixes the issue at hand.
+
+## v0.4.0 (2024-06-05)
+- Fixed bug where cursor would jump back to the top after deleting, renaming, 
+  creating, or undoing.
+- Added new keybind `c` to change directory via path.
+- Previous positions are saved when entering a new directory.
+- PDFs can now be read if `pdftotext` is installed.
+- Undo history can now only store the last 100 events.
+- List scrolling is now squeaky smooth.
+- Other general refactors and bug fixes.
+
+## v0.3.0 (2024-05-30)
+- Moved render and event handling logic to their own functions. This will make 
+  it a more pleasant experience for contributors.
+- Added issue templates for easier and more concise bug reports and feature 
+  requests.
+- Fixed issue where images would stop rendering if an event was emitted without 
+  changing selected item.
+- Implemented ability to delete files and folders.
+- Implemented ability to rename files and folders.
+- Implemented ability to undo deletions and renames within a session.
+- Implemented ability to create folders and directories.
+- Updated README with new keybinds.
+- Added config option for styling info bar.
+
+## v0.2.0 (2024-05-26)
+- Implemented fuzzy search for items in a directory.
+- Files can now be opened with `$EDITOR`.
+- Error messages now displayed in app.
+- Better errors when failing to read config.
+- Stopped supporting Windows.
+
+## v0.1.1 (2024-05-25)
+- Added better error handling.
+- Added new config style for error bar.
+- Updated README to include config schema.
+- Added MIT license.
+
+## v0.1.0 (2024-05-24)
