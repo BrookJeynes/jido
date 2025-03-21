@@ -1,7 +1,38 @@
 # Changelog
 
+## v0.9.0 (2025-03-21)
+- New Keybinds:
+    - Added keybind `<CTRL-r>` to reload config while Jido is running.
+    - Added keybind `.` to hide/show hidden files at runtime.
+      Default behaviour is still read from the config file if set.
+- Added keybind rebinding.
+  Jido now allows you to rebind certain keys. These can be rebound via the config
+  file. See [Configuration](https://github.com/BrookJeynes/jido?tab=readme-ov-file#configuration) 
+  for more information.
+- Added file logger.
+  This file logger allows Jido to provide users with more detailed log messages
+  the notification system cannot. The log file can be found within the config
+  directory under the file `log.txt`.
+- Jido is now built with the latest stable version of Zig, v0.14.0.
+- Fixes:
+    - Hiding/showing hidden files after cd would cause all the files to visually
+      disappear.
+    - Off by one error when traversing command history causing the list to skip 
+      some entries.
+    - Empty commands are no longer added to the command history. This now means
+      commands are whitespace trimmed.
+    - Move logic to hide dot files from renderer to directory reader.
+      This moves the logic to hide dot files out from the renderer to the
+      directory reader. This means if hidden files are turned off, they aren't
+      even stored.
+    - Default styling didn't specify styling for notification box text. This
+      would cause visual issues for light mode users.
+
 ## v0.8.3 (2025-03-19)
 - feat: Added keybind `<CTRL-r>` to reload config while Jido is running.
+- fix: Hiding/showing hidden files after cd would display no files.
+- fix: Off by one error when traversing command history...
+- fix: Dont add empty commands to command history.
 - docs: Updated readme to mention new keybind.
 - docs: Reordered keybinds section to add "Global" section.
 
