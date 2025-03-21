@@ -139,6 +139,7 @@ const Colours = struct {
 
 const NotificationStyles = struct {
     box: vaxis.Style = vaxis.Style{
+        .fg = .{ .rgb = Colours.snow_white },
         .bg = .{ .rgb = Colours.grey },
     },
     err: vaxis.Style = vaxis.Style{
