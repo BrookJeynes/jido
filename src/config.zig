@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const environment = @import("./environment.zig");
 const vaxis = @import("vaxis");
+const FileLogger = @import("file_logger.zig");
 const Notification = @import("./notification.zig");
 
 const CONFIG_NAME = "config.json";
@@ -103,6 +104,9 @@ const Config = struct {
 
         // Check duplicate keybinds
         {
+            var file_logger = try FileLogger.init(alloc);
+            defer file_logger.deinit();
+
             var key_map = std.AutoHashMap(u21, []const u8).init(alloc);
             defer {
                 var it = key_map.iterator();
@@ -117,6 +121,15 @@ const Config = struct {
 
                 const res = try key_map.getOrPut(codepoint);
                 if (res.found_existing) {
+                    const message = try std.fmt.allocPrint(
+                        alloc,
+                        "'{s}' and '{s}' have the same keybind: '{d}'",
+                        .{ res.value_ptr.*, field.name, codepoint },
+                    );
+                    defer alloc.free(message);
+
+                    file_logger.write(message, .err) catch {};
+
                     return error.DuplicateKeybind;
                 }
                 res.value_ptr.* = try alloc.dupe(u8, field.name);

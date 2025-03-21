@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const App = @import("app.zig");
+const FileLogger = @import("file_logger.zig");
 const vaxis = @import("vaxis");
 const config = &@import("./config.zig").config;
 
@@ -40,6 +41,8 @@ pub fn main() !void {
             try app.notification.writeErr(.ConfigUnknownError);
         },
     };
+
+    app.file_logger = try FileLogger.init(alloc);
 
     try app.run();
 }

@@ -6,6 +6,7 @@ const Notification = @import("./notification.zig");
 const config = &@import("./config.zig").config;
 const List = @import("./list.zig").List;
 const Directories = @import("./directories.zig");
+const FileLogger = @import("./file_logger.zig");
 const CircStack = @import("./circ_stack.zig").CircularStack;
 const zuid = @import("zuid");
 const vaxis = @import("vaxis");
@@ -54,6 +55,8 @@ command_history: CommandHistory = CommandHistory{},
 
 directories: Directories,
 notification: Notification,
+// Assigned in main after config parsing.
+file_logger: FileLogger = undefined,
 
 text_input: vaxis.widgets.TextInput,
 text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
@@ -107,6 +110,7 @@ pub fn deinit(self: *App) void {
     self.text_input.deinit();
     self.vx.deinit(self.alloc, self.tty.anyWriter());
     self.tty.deinit();
+    self.file_logger.deinit();
 }
 
 pub fn run(self: *App) !void {
@@ -140,6 +144,12 @@ pub fn run(self: *App) !void {
                         } else |err| switch (err) {
                             error.SyntaxError => {
                                 try self.notification.writeErr(.ConfigSyntaxError);
+                            },
+                            error.InvalidCharacter => {
+                                try self.notification.writeErr(.InvalidKeybind);
+                            },
+                            error.DuplicateKeybind => {
+                                try self.notification.writeErr(.DuplicateKeybinds);
                             },
                             else => {
                                 try self.notification.writeErr(.ConfigUnknownError);
