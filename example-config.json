@@ -3,6 +3,9 @@
     "sort_dirs": false,
     "show_images": true,
     "preview_file": true,
+    "keybinds": {
+        "toggle_hidden_files": "h"
+    },
     "styles": {
         "selected_list_item": {
             "bg": {

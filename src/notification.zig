@@ -28,6 +28,8 @@ const Error = enum {
     ConfigUnknownError,
     ConfigPathNotFound,
     CannotDeleteTrashDir,
+    DuplicateKeybinds,
+    InvalidKeybind,
     NotADir,
 };
 
@@ -82,6 +84,8 @@ pub fn writeErr(self: *Self, err: Error) !void {
         .ConfigUnknownError => self.write("Could not read config due to an unknown error.", .err),
         .ConfigPathNotFound => self.write("Could not read config due to unset env variables. Please set either $HOME or $XDG_CONFIG_HOME.", .err),
         .CannotDeleteTrashDir => self.write("Cannot delete trash directory.", .err),
+        .DuplicateKeybinds => self.write("Config has keybinds with the same key. This can lead to undefined behaviour. Check log file for more information.", .err),
+        .InvalidKeybind => self.write("Config has keybind(s) with invalid key(s).", .err),
     };
 }
 

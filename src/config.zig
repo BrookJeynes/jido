@@ -17,7 +17,8 @@ const Config = struct {
     empty_trash_on_exit: bool = false,
     // TODO(10-01-25): This needs to be implemented.
     // command_history_len: usize = 10,
-    styles: Styles = Styles{},
+    styles: Styles = .{},
+    keybinds: Keybinds = .{},
 
     config_dir: ?std.fs.Dir = null,
 
@@ -51,7 +52,10 @@ const Config = struct {
                     try home_dir.makeDir(XDG_CONFIG_HOME_DIR_NAME);
                 }
 
-                const jido_dir = try home_dir.openDir(XDG_CONFIG_HOME_DIR_NAME, .{ .iterate = true });
+                const jido_dir = try home_dir.openDir(
+                    XDG_CONFIG_HOME_DIR_NAME,
+                    .{ .iterate = true },
+                );
                 self.config_dir = jido_dir;
 
                 if (environment.fileExists(jido_dir, CONFIG_NAME)) {
@@ -70,7 +74,10 @@ const Config = struct {
                     try home_dir.makeDir(HOME_DIR_NAME);
                 }
 
-                const jido_dir = try home_dir.openDir(HOME_DIR_NAME, .{ .iterate = true });
+                const jido_dir = try home_dir.openDir(
+                    HOME_DIR_NAME,
+                    .{ .iterate = true },
+                );
                 self.config_dir = jido_dir;
 
                 if (environment.fileExists(jido_dir, CONFIG_NAME)) {
@@ -93,6 +100,29 @@ const Config = struct {
 
         self.* = parsed_config.value;
         self.config_dir = dir;
+
+        // Check duplicate keybinds
+        {
+            var key_map = std.AutoHashMap(u21, []const u8).init(alloc);
+            defer {
+                var it = key_map.iterator();
+                while (it.next()) |entry| {
+                    alloc.free(entry.value_ptr.*);
+                }
+                key_map.deinit();
+            }
+
+            inline for (std.meta.fields(Keybinds)) |field| {
+                const codepoint = @intFromEnum(@field(self.keybinds, field.name));
+
+                const res = try key_map.getOrPut(codepoint);
+                if (res.found_existing) {
+                    return error.DuplicateKeybind;
+                }
+                res.value_ptr.* = try alloc.dupe(u8, field.name);
+            }
+        }
+
         return;
     }
 };
@@ -125,6 +155,29 @@ const NotificationStyles = struct {
     },
 };
 
+pub const Keybinds = struct {
+    pub const Char = enum(u21) {
+        _,
+        pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {
+            const parsed = try std.json.innerParse([]const u8, alloc, source, options);
+            if (std.mem.eql(u8, parsed, "")) return error.InvalidCharacter;
+            const unicode = std.unicode.utf8Decode(parsed) catch return error.InvalidCharacter;
+            return @enumFromInt(unicode);
+        }
+    };
+
+    toggle_hidden_files: Char = @enumFromInt('.'),
+    delete: Char = @enumFromInt('D'),
+    rename: Char = @enumFromInt('R'),
+    create_dir: Char = @enumFromInt('d'),
+    create_file: Char = @enumFromInt('%'),
+    fuzzy_find: Char = @enumFromInt('/'),
+    change_dir: Char = @enumFromInt('c'),
+    enter_command_mode: Char = @enumFromInt(':'),
+    jump_top: Char = @enumFromInt('g'),
+    jump_bottom: Char = @enumFromInt('G'),
+};
+
 const Styles = struct {
     selected_list_item: vaxis.Style = vaxis.Style{
         .bg = .{ .rgb = Colours.grey },
@@ -144,4 +197,4 @@ const Styles = struct {
     },
 };
 
-pub var config: Config = Config{ .styles = Styles{} };
+pub var config: Config = Config{};

@@ -30,6 +30,12 @@ pub fn main() !void {
         error.SyntaxError => {
             try app.notification.writeErr(.ConfigSyntaxError);
         },
+        error.InvalidCharacter => {
+            try app.notification.writeErr(.InvalidKeybind);
+        },
+        error.DuplicateKeybind => {
+            try app.notification.writeErr(.DuplicateKeybinds);
+        },
         else => {
             try app.notification.writeErr(.ConfigUnknownError);
         },

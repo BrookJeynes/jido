@@ -28,6 +28,9 @@ via `zig build --release=safe`.
 - A terminal supporting the `kitty image protocol` to view images.
 
 ## Key manual
+Below are the default keybinds. Keybinds can be overwritten via the `Keybinds`
+config option. See [Configuration](#configuration) for more information.
+
 ```
 Global:
 <CTRL-c>           :Exit.
@@ -65,7 +68,6 @@ Command mode:
 :cd <path>         :Change directory via path. Will enter input mode.
 ```
 
-
 ## Configuration
 Configure `jido` by editing the external configuration file located at either:
 - `$HOME/.jido/config.json`
@@ -84,15 +86,29 @@ Config = struct {
     .show_images: bool,
     .preview_file: bool,
     .empty_trash_on_exit: bool,
-    .styles: Styles,
+    .keybinds: Keybinds,
+    .styles: Styles
+}
+
+Keybinds = struct {
+    .toggle_hidden_files: Char,
+    .delete: Char,
+    .rename: Char,
+    .create_dir: Char,
+    .create_file: Char,
+    .fuzzy_find: Char,
+    .change_dir: Char,
+    .enter_command_mode: Char
+    .jump_top: Char
+    .jump_bottom: Char
 }
 
 NotificationStyles = struct {
-    box: vaxis.Style,
-    err: vaxis.Style,
-    warn: vaxis.Style,
-    info: vaxis.Style,
-};
+    .box: vaxis.Style,
+    .err: vaxis.Style,
+    .warn: vaxis.Style,
+    .info: vaxis.Style
+}
 
 Styles = struct {
     .selected_list_item: Style,
@@ -100,7 +116,7 @@ Styles = struct {
     .file_name: Style,
     .file_information: Style
     .notification: NotificationStyles,
-    .git_branch: Style,
+    .git_branch: Style
 }
 
 Style = struct {
@@ -113,7 +129,7 @@ Style = struct {
         double,
         curly,
         dotted,
-        dashed,
+        dashed
     }
     .bold: bool,
     .dim: bool,
@@ -121,14 +137,16 @@ Style = struct {
     .blink: bool,
     .reverse: bool,
     .invisible: bool,
-    .strikethrough: bool,
+    .strikethrough: bool
 }
 
 Color = enum{
     default,
     index: u8,
-    rgb: [3]u8,
+    rgb: [3]u8
 }
+
+Char = enum(u21)
 ```
 
 ## Contributing

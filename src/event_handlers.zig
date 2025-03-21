@@ -6,6 +6,7 @@ const vaxis = @import("vaxis");
 const Key = vaxis.Key;
 const config = &@import("./config.zig").config;
 const commands = @import("./commands.zig");
+const Keybinds = @import("./config.zig").Keybinds;
 
 pub fn inputToSlice(self: *App) []const u8 {
     self.text_input.buf.cursor = self.text_input.buf.realLength();
@@ -19,290 +20,309 @@ pub fn handleNormalEvent(
 ) !void {
     switch (event) {
         .key_press => |key| {
-            switch (key.codepoint) {
-                '-', 'h', Key.left => {
-                    app.text_input.clearAndFree();
+            @setEvalBranchQuota(
+                std.meta.fields(Keybinds).len * 1000,
+            );
 
-                    if (app.directories.dir.openDir("../", .{ .iterate = true })) |dir| {
-                        app.directories.dir.close();
-                        app.directories.dir = dir;
+            const maybe_remap: ?std.meta.FieldEnum(Keybinds) = lbl: {
+                inline for (std.meta.fields(Keybinds)) |field| {
+                    if (key.codepoint == @intFromEnum(@field(config.keybinds, field.name))) {
+                        break :lbl comptime std.meta.stringToEnum(std.meta.FieldEnum(Keybinds), field.name) orelse unreachable;
+                    }
+                }
+                break :lbl null;
+            };
+
+            if (maybe_remap) |action| {
+                switch (action) {
+                    .toggle_hidden_files => {
+                        config.show_hidden = !config.show_hidden;
+
+                        const prev_selected_name: []const u8, const prev_selected_err: bool = lbl: {
+                            const selected = app.directories.getSelected() catch break :lbl .{ "", true };
+                            if (selected == null) break :lbl .{ "", true };
+
+                            break :lbl .{ try app.alloc.dupe(u8, selected.?.name), false };
+                        };
+                        defer if (!prev_selected_err) app.alloc.free(prev_selected_name);
 
                         app.directories.clearEntries();
-                        const fuzzy = inputToSlice(app);
-                        app.directories.populateEntries(fuzzy) catch |err| {
+                        app.text_input.clearAndFree();
+                        app.directories.populateEntries("") catch |err| {
                             switch (err) {
                                 error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                                 else => try app.notification.writeErr(.UnknownError),
                             }
                         };
 
-                        if (app.directories.history.pop()) |history| {
-                            if (history.selected < app.directories.entries.len()) {
-                                app.directories.entries.selected = history.selected;
-                                app.directories.entries.offset = history.offset;
-                            }
+                        for (app.directories.entries.all()) |entry| {
+                            // Update offset as we search for last selected entry.
+                            app.directories.entries.updateOffset(app.last_known_height, .next);
+                            if (std.mem.eql(u8, entry.name, prev_selected_name)) return;
+                            app.directories.entries.selected += 1;
                         }
-                    } else |err| {
-                        switch (err) {
-                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                            else => try app.notification.writeErr(.UnknownError),
-                        }
-                    }
-                },
-                Key.enter, 'l', Key.right => {
-                    const entry = lbl: {
-                        const entry = app.directories.getSelected() catch return;
-                        if (entry) |e| break :lbl e else return;
-                    };
 
-                    switch (entry.kind) {
-                        .directory => {
-                            app.text_input.clearAndFree();
+                        // If it didn't find entry, reset selected.
+                        app.directories.entries.selected = 0;
+                    },
+                    .delete => {
+                        const entry = lbl: {
+                            const entry = app.directories.getSelected() catch {
+                                try app.notification.writeErr(.UnableToDelete);
+                                return;
+                            };
+                            if (entry) |e| break :lbl e else return;
+                        };
 
-                            if (app.directories.dir.openDir(entry.name, .{ .iterate = true })) |dir| {
-                                app.directories.dir.close();
-                                app.directories.dir = dir;
+                        var old_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                        const old_path = try app.alloc.dupe(u8, try app.directories.dir.realpath(entry.name, &old_path_buf));
 
-                                _ = app.directories.history.push(.{
-                                    .selected = app.directories.entries.selected,
-                                    .offset = app.directories.entries.offset,
-                                });
-
-                                app.directories.clearEntries();
-                                const fuzzy = inputToSlice(app);
-                                app.directories.populateEntries(fuzzy) catch |err| {
-                                    switch (err) {
-                                        error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                                        else => try app.notification.writeErr(.UnknownError),
-                                    }
-                                };
-                            } else |err| {
-                                switch (err) {
-                                    error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                                    else => try app.notification.writeErr(.UnknownError),
-                                }
+                        var trash_dir = dir: {
+                            notfound: {
+                                break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
                             }
-                        },
-                        .file => {
-                            if (environment.getEditor()) |editor| {
-                                try app.vx.exitAltScreen(app.tty.anyWriter());
-                                try app.vx.resetState(app.tty.anyWriter());
-                                loop.stop();
-
-                                environment.openFile(app.alloc, app.directories.dir, entry.name, editor) catch {
-                                    try app.notification.writeErr(.UnableToOpenFile);
-                                };
-
-                                try loop.start();
-                                try app.vx.enterAltScreen(app.tty.anyWriter());
-                                try app.vx.enableDetectedFeatures(app.tty.anyWriter());
-                                app.vx.queueRefresh();
-                            } else {
-                                try app.notification.writeErr(.EditorNotSet);
-                            }
-                        },
-                        else => {},
-                    }
-                },
-                'j', Key.down => {
-                    app.directories.entries.next(app.last_known_height);
-                },
-                'k', Key.up => {
-                    app.directories.entries.previous(app.last_known_height);
-                },
-                'G' => {
-                    app.directories.entries.selectLast(app.last_known_height);
-                },
-                'g' => app.directories.entries.selectFirst(),
-                'D' => {
-                    const entry = lbl: {
-                        const entry = app.directories.getSelected() catch {
-                            try app.notification.writeErr(.UnableToDelete);
+                            app.alloc.free(old_path);
+                            try app.notification.writeErr(.ConfigPathNotFound);
                             return;
                         };
-                        if (entry) |e| break :lbl e else return;
-                    };
+                        defer trash_dir.close();
+                        var trash_dir_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                        const trash_dir_path = try trash_dir.realpath(".", &trash_dir_path_buf);
 
-                    var old_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                    const old_path = try app.alloc.dupe(u8, try app.directories.dir.realpath(entry.name, &old_path_buf));
-
-                    var trash_dir = dir: {
-                        notfound: {
-                            break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
-                        }
-                        app.alloc.free(old_path);
-                        try app.notification.writeErr(.ConfigPathNotFound);
-                        return;
-                    };
-                    defer trash_dir.close();
-                    var trash_dir_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                    const trash_dir_path = try trash_dir.realpath(".", &trash_dir_path_buf);
-
-                    if (std.mem.eql(u8, old_path, trash_dir_path)) {
-                        try app.notification.writeErr(.CannotDeleteTrashDir);
-                        app.alloc.free(old_path);
-                        return;
-                    }
-
-                    var tmp_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                    const tmp_path = try app.alloc.dupe(u8, try std.fmt.bufPrint(&tmp_path_buf, "{s}/{s}-{s}", .{ trash_dir_path, entry.name, zuid.new.v4().toArray() }));
-
-                    if (app.directories.dir.rename(entry.name, tmp_path)) {
-                        if (app.actions.push(.{
-                            .delete = .{ .old = old_path, .new = tmp_path },
-                        })) |prev_elem| {
-                            app.alloc.free(prev_elem.delete.old);
-                            app.alloc.free(prev_elem.delete.new);
+                        if (std.mem.eql(u8, old_path, trash_dir_path)) {
+                            try app.notification.writeErr(.CannotDeleteTrashDir);
+                            app.alloc.free(old_path);
+                            return;
                         }
 
-                        try app.notification.writeInfo(.Deleted);
-                        app.directories.removeSelected();
-                    } else |err| {
-                        switch (err) {
-                            error.RenameAcrossMountPoints => try app.notification.writeErr(.UnableToDeleteAcrossMountPoints),
-                            else => try app.notification.writeErr(.UnableToDelete),
+                        var tmp_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                        const tmp_path = try app.alloc.dupe(u8, try std.fmt.bufPrint(&tmp_path_buf, "{s}/{s}-{s}", .{ trash_dir_path, entry.name, zuid.new.v4() }));
+
+                        if (app.directories.dir.rename(entry.name, tmp_path)) {
+                            if (app.actions.push(.{
+                                .delete = .{ .old = old_path, .new = tmp_path },
+                            })) |prev_elem| {
+                                app.alloc.free(prev_elem.delete.old);
+                                app.alloc.free(prev_elem.delete.new);
+                            }
+
+                            try app.notification.writeInfo(.Deleted);
+                            app.directories.removeSelected();
+                        } else |err| {
+                            switch (err) {
+                                error.RenameAcrossMountPoints => try app.notification.writeErr(.UnableToDeleteAcrossMountPoints),
+                                else => try app.notification.writeErr(.UnableToDelete),
+                            }
+                            app.alloc.free(old_path);
+                            app.alloc.free(tmp_path);
                         }
-                        app.alloc.free(old_path);
-                        app.alloc.free(tmp_path);
-                    }
-                },
-                'd' => {
-                    app.text_input.clearAndFree();
-                    app.directories.clearEntries();
-                    app.directories.populateEntries("") catch |err| {
-                        switch (err) {
-                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                            else => try app.notification.writeErr(.UnknownError),
-                        }
-                    };
-                    app.state = .new_dir;
-                },
-                '%' => {
-                    app.text_input.clearAndFree();
-                    app.directories.clearEntries();
-                    app.directories.populateEntries("") catch |err| {
-                        switch (err) {
-                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                            else => try app.notification.writeErr(.UnknownError),
-                        }
-                    };
-                    app.state = .new_file;
-                },
-                'u' => {
-                    if (app.actions.pop()) |action| {
-                        const selected = app.directories.entries.selected;
+                    },
+                    .rename => {
+                        app.text_input.clearAndFree();
+                        app.state = .rename;
 
-                        switch (action) {
-                            .delete => |a| {
-                                defer app.alloc.free(a.new);
-                                defer app.alloc.free(a.old);
+                        const entry = lbl: {
+                            const entry = app.directories.getSelected() catch {
+                                app.state = .normal;
+                                try app.notification.writeErr(.UnableToRename);
+                                return;
+                            };
+                            if (entry) |e| break :lbl e else {
+                                app.state = .normal;
+                                return;
+                            }
+                        };
 
-                                // TODO: Will overwrite an item if it has the same name.
-                                if (app.directories.dir.rename(a.new, a.old)) {
-                                    app.directories.clearEntries();
-                                    const fuzzy = inputToSlice(app);
-                                    app.directories.populateEntries(fuzzy) catch |err| {
-                                        switch (err) {
-                                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                                            else => try app.notification.writeErr(.UnknownError),
-                                        }
-                                    };
-                                    try app.notification.writeInfo(.RestoredDelete);
-                                } else |_| {
-                                    try app.notification.writeErr(.UnableToUndo);
-                                }
-                            },
-                            .rename => |a| {
-                                defer app.alloc.free(a.new);
-                                defer app.alloc.free(a.old);
-
-                                // TODO: Will overwrite an item if it has the same name.
-                                if (app.directories.dir.rename(a.new, a.old)) {
-                                    app.directories.clearEntries();
-                                    const fuzzy = inputToSlice(app);
-                                    app.directories.populateEntries(fuzzy) catch |err| {
-                                        switch (err) {
-                                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                                            else => try app.notification.writeErr(.UnknownError),
-                                        }
-                                    };
-                                    try app.notification.writeInfo(.RestoredRename);
-                                } else |_| {
-                                    try app.notification.writeErr(.UnableToUndo);
-                                }
-                            },
-                        }
-
-                        app.directories.entries.selected = selected;
-                    } else {
-                        try app.notification.writeInfo(.EmptyUndo);
-                    }
-                },
-                '/' => {
-                    app.text_input.clearAndFree();
-                    app.state = .fuzzy;
-                },
-                'R' => {
-                    app.text_input.clearAndFree();
-                    app.state = .rename;
-
-                    const entry = lbl: {
-                        const entry = app.directories.getSelected() catch {
+                        app.text_input.insertSliceAtCursor(entry.name) catch {
                             app.state = .normal;
                             try app.notification.writeErr(.UnableToRename);
                             return;
                         };
-                        if (entry) |e| break :lbl e else {
-                            app.state = .normal;
-                            return;
+                    },
+                    .create_dir => {
+                        app.text_input.clearAndFree();
+                        app.directories.clearEntries();
+                        app.directories.populateEntries("") catch |err| {
+                            switch (err) {
+                                error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                else => try app.notification.writeErr(.UnknownError),
+                            }
+                        };
+                        app.state = .new_dir;
+                    },
+                    .create_file => {
+                        app.text_input.clearAndFree();
+                        app.directories.clearEntries();
+                        app.directories.populateEntries("") catch |err| {
+                            switch (err) {
+                                error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                else => try app.notification.writeErr(.UnknownError),
+                            }
+                        };
+                        app.state = .new_file;
+                    },
+                    .fuzzy_find => {
+                        app.text_input.clearAndFree();
+                        app.state = .fuzzy;
+                    },
+                    .change_dir => {
+                        app.text_input.clearAndFree();
+                        app.state = .change_dir;
+                    },
+                    .enter_command_mode => {
+                        app.text_input.clearAndFree();
+                        app.text_input.insertSliceAtCursor(":") catch {};
+                        app.state = .command;
+                    },
+                    .jump_bottom => {
+                        app.directories.entries.selectLast(app.last_known_height);
+                    },
+                    .jump_top => app.directories.entries.selectFirst(),
+                }
+            } else {
+                switch (key.codepoint) {
+                    '-', 'h', Key.left => {
+                        app.text_input.clearAndFree();
+
+                        if (app.directories.dir.openDir("../", .{ .iterate = true })) |dir| {
+                            app.directories.dir.close();
+                            app.directories.dir = dir;
+
+                            app.directories.clearEntries();
+                            const fuzzy = inputToSlice(app);
+                            app.directories.populateEntries(fuzzy) catch |err| {
+                                switch (err) {
+                                    error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                    else => try app.notification.writeErr(.UnknownError),
+                                }
+                            };
+
+                            if (app.directories.history.pop()) |history| {
+                                if (history.selected < app.directories.entries.len()) {
+                                    app.directories.entries.selected = history.selected;
+                                    app.directories.entries.offset = history.offset;
+                                }
+                            }
+                        } else |err| {
+                            switch (err) {
+                                error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                else => try app.notification.writeErr(.UnknownError),
+                            }
                         }
-                    };
+                    },
+                    Key.enter, 'l', Key.right => {
+                        const entry = lbl: {
+                            const entry = app.directories.getSelected() catch return;
+                            if (entry) |e| break :lbl e else return;
+                        };
 
-                    app.text_input.insertSliceAtCursor(entry.name) catch {
-                        app.state = .normal;
-                        try app.notification.writeErr(.UnableToRename);
-                        return;
-                    };
-                },
-                'c' => {
-                    app.text_input.clearAndFree();
-                    app.state = .change_dir;
-                },
-                ':' => {
-                    app.text_input.clearAndFree();
-                    app.text_input.insertSliceAtCursor(":") catch {};
-                    app.state = .command;
-                },
-                '.' => {
-                    config.show_hidden = !config.show_hidden;
+                        switch (entry.kind) {
+                            .directory => {
+                                app.text_input.clearAndFree();
 
-                    const prev_selected_name: []const u8, const prev_selected_err: bool = lbl: {
-                        const selected = app.directories.getSelected() catch break :lbl .{ "", true };
-                        if (selected == null) break :lbl .{ "", true };
+                                if (app.directories.dir.openDir(entry.name, .{ .iterate = true })) |dir| {
+                                    app.directories.dir.close();
+                                    app.directories.dir = dir;
 
-                        break :lbl .{ try app.alloc.dupe(u8, selected.?.name), false };
-                    };
-                    defer if (!prev_selected_err) app.alloc.free(prev_selected_name);
+                                    _ = app.directories.history.push(.{
+                                        .selected = app.directories.entries.selected,
+                                        .offset = app.directories.entries.offset,
+                                    });
 
-                    app.directories.clearEntries();
-                    app.directories.populateEntries("") catch |err| {
-                        switch (err) {
-                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                            else => try app.notification.writeErr(.UnknownError),
+                                    app.directories.clearEntries();
+                                    const fuzzy = inputToSlice(app);
+                                    app.directories.populateEntries(fuzzy) catch |err| {
+                                        switch (err) {
+                                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                            else => try app.notification.writeErr(.UnknownError),
+                                        }
+                                    };
+                                } else |err| {
+                                    switch (err) {
+                                        error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                        else => try app.notification.writeErr(.UnknownError),
+                                    }
+                                }
+                            },
+                            .file => {
+                                if (environment.getEditor()) |editor| {
+                                    try app.vx.exitAltScreen(app.tty.anyWriter());
+                                    try app.vx.resetState(app.tty.anyWriter());
+                                    loop.stop();
+
+                                    environment.openFile(app.alloc, app.directories.dir, entry.name, editor) catch {
+                                        try app.notification.writeErr(.UnableToOpenFile);
+                                    };
+
+                                    try loop.start();
+                                    try app.vx.enterAltScreen(app.tty.anyWriter());
+                                    try app.vx.enableDetectedFeatures(app.tty.anyWriter());
+                                    app.vx.queueRefresh();
+                                } else {
+                                    try app.notification.writeErr(.EditorNotSet);
+                                }
+                            },
+                            else => {},
                         }
-                    };
+                    },
+                    'j', Key.down => {
+                        app.directories.entries.next(app.last_known_height);
+                    },
+                    'k', Key.up => {
+                        app.directories.entries.previous(app.last_known_height);
+                    },
+                    'u' => {
+                        if (app.actions.pop()) |action| {
+                            const selected = app.directories.entries.selected;
 
-                    for (app.directories.entries.all()) |entry| {
-                        // Update offset as we search for last selected entry.
-                        app.directories.entries.updateOffset(app.last_known_height, .next);
-                        if (std.mem.eql(u8, entry.name, prev_selected_name)) return;
-                        app.directories.entries.selected += 1;
-                    }
+                            switch (action) {
+                                .delete => |a| {
+                                    defer app.alloc.free(a.new);
+                                    defer app.alloc.free(a.old);
 
-                    // If it didn't find entry, reset selected.
-                    app.directories.entries.selected = 0;
-                },
-                else => {},
+                                    // TODO: Will overwrite an item if it has the same name.
+                                    if (app.directories.dir.rename(a.new, a.old)) {
+                                        app.directories.clearEntries();
+                                        const fuzzy = inputToSlice(app);
+                                        app.directories.populateEntries(fuzzy) catch |err| {
+                                            switch (err) {
+                                                error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                                else => try app.notification.writeErr(.UnknownError),
+                                            }
+                                        };
+                                        try app.notification.writeInfo(.RestoredDelete);
+                                    } else |_| {
+                                        try app.notification.writeErr(.UnableToUndo);
+                                    }
+                                },
+                                .rename => |a| {
+                                    defer app.alloc.free(a.new);
+                                    defer app.alloc.free(a.old);
+
+                                    // TODO: Will overwrite an item if it has the same name.
+                                    if (app.directories.dir.rename(a.new, a.old)) {
+                                        app.directories.clearEntries();
+                                        const fuzzy = inputToSlice(app);
+                                        app.directories.populateEntries(fuzzy) catch |err| {
+                                            switch (err) {
+                                                error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                                else => try app.notification.writeErr(.UnknownError),
+                                            }
+                                        };
+                                        try app.notification.writeInfo(.RestoredRename);
+                                    } else |_| {
+                                        try app.notification.writeErr(.UnableToUndo);
+                                    }
+                                },
+                            }
+
+                            app.directories.entries.selected = selected;
+                        } else {
+                            try app.notification.writeInfo(.EmptyUndo);
+                        }
+                    },
+                    else => {},
+                }
             }
         },
         .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
