@@ -255,6 +255,39 @@ fn drawFileInfo(
         .{ directories.entries.selected + 1, directories.entries.len() },
     );
 
+    var file_perm_buf: [11]u8 = undefined;
+    const file_perms: ?usize = lbl: {
+        var file_perm_fbs = std.io.fixedBufferStream(&file_perm_buf);
+
+        if (entry.kind == .directory) {
+            _ = try file_perm_fbs.write("d");
+        }
+
+        const perm_strings = [_][]const u8{
+            "---", "--x", "-w-", "-wx",
+            "r--", "r-x", "rw-", "rwx",
+        };
+
+        const stat = directories.dir.statFile(entry.name) catch break :lbl null;
+        // Ignore upper bytes as they represent file type.
+        const perms = @as(u9, @truncate(stat.mode));
+
+        for (0..3) |group| {
+            const shift: u4 = @truncate((2 - group) * 3); // Extract from left to right
+            const perm = @as(u3, @truncate((perms >> shift) & 0b111));
+            _ = try file_perm_fbs.write(perm_strings[perm]);
+        }
+
+        _ = try file_perm_fbs.write(" ");
+
+        if (entry.kind == .directory) {
+            break :lbl 11;
+        } else {
+            break :lbl 10;
+        }
+    };
+    if (file_perms) |perms_bytes| try fbs.writer().writeAll(file_perm_buf[0..perms_bytes]);
+
     if (entry.kind == .directory) {
         _ = file_info_win.printSegment(.{
             .text = fbs.getWritten(),
@@ -264,14 +297,13 @@ fn drawFileInfo(
     }
 
     const file_size: u64 = lbl: {
-        const formatted_size = directories.dir.statFile(entry.name) catch break :lbl 0;
-        break :lbl formatted_size.size;
+        const stat = directories.dir.statFile(entry.name) catch break :lbl 0;
+        break :lbl stat.size;
     };
+    try fbs.writer().print("{:.2} ", .{std.fmt.fmtIntSizeDec(file_size)});
 
     const extension = std.fs.path.extension(entry.name);
     if (extension.len > 0) try fbs.writer().print("{s} ", .{extension});
-
-    try fbs.writer().print("{:.2}", .{std.fmt.fmtIntSizeDec(file_size)});
 
     _ = file_info_win.printSegment(.{
         .text = fbs.getWritten(),

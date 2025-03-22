@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.1 (2025-03-23)
+- feat: File permissions are now displayed in the file information bar to the 
+  bottom of Jido.
+
 ## v0.9.0 (2025-03-21)
 - New Keybinds:
     - Added keybind `<CTRL-r>` to reload config while Jido is running.
