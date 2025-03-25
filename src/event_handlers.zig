@@ -178,6 +178,7 @@ pub fn handleNormalEvent(
                         app.directories.entries.selectLast(app.last_known_height);
                     },
                     .jump_top => app.directories.entries.selectFirst(),
+                    .toggle_verbose_file_information => app.drawer.verbose = !app.drawer.verbose,
                 }
             } else {
                 switch (key.codepoint) {

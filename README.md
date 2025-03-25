@@ -50,10 +50,11 @@ u                  :Undo delete/rename.
 d                  :Create directory. Will enter input mode.
 %                  :Create file. Will enter input mode.
 /                  :Fuzzy search directory. Will enter input mode.
-.                  :Show/Hide hidden files.
+.                  :Toggle hidden files.
 :                  :Allows for Jido commands to be entered. Please refer to the 
                     "Command mode" section for available commands. Will enter 
                     input mode.
+v                  :Verbose mode. Provides more information about selected entry. 
 
 Input mode:
 <Esc>              :Cancel input.
@@ -73,34 +74,42 @@ Configure `jido` by editing the external configuration file located at either:
 - `$HOME/.jido/config.json`
 - `$XDG_CONFIG_HOME/jido/config.json`.
 
-Jido will look for these env variables specifically. If they are not set, Jido will
-not be able to find the config file.
+Jido will look for these env variables specifically. If they are not set, Jido 
+will not be able to find the config file.
 
 An example config file can be found [here](https://github.com/BrookJeynes/jido/blob/main/example-config.json).
 
 Config schema:
 ```
 Config = struct {
-    .show_hidden: bool,
-    .sort_dirs: bool,
-    .show_images: bool,
-    .preview_file: bool,
-    .empty_trash_on_exit: bool,
+    .show_hidden: bool = true,
+    .sort_dirs:   bool = true,
+    .show_images: bool = true,           -- Images are only supported in a terminal 
+                                            supporting the `kitty image protocol`.
+    .preview_file: bool = true,
+    .empty_trash_on_exit: bool = false,  -- Emptying the trash permanently deletes 
+                                            all files within the trash. These 
+                                            files are not recoverable past this 
+                                            point.
+    .true_dir_size: bool = false,        -- Display size of directory including 
+                                            all its children. This can and will 
+                                            cause lag on deeply nested directories.
     .keybinds: Keybinds,
     .styles: Styles
 }
 
 Keybinds = struct {
-    .toggle_hidden_files: Char,
-    .delete: Char,
-    .rename: Char,
-    .create_dir: Char,
-    .create_file: Char,
-    .fuzzy_find: Char,
-    .change_dir: Char,
-    .enter_command_mode: Char
-    .jump_top: Char
-    .jump_bottom: Char
+    .toggle_hidden_files: Char = '.',
+    .delete: Char = 'D',
+    .rename: Char = 'R',
+    .create_dir: Char = 'd',
+    .create_file: Char = '%',
+    .fuzzy_find: Char = '/',
+    .change_dir: Char = 'c',
+    .enter_command_mode: Char = ':',
+    .jump_top: Char = 'g',
+    .jump_bottom: Char = 'G',
+    .toggle_verbose_file_information: Char = 'v'
 }
 
 NotificationStyles = struct {

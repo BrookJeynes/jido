@@ -1,7 +1,7 @@
 .{
     .name = .jido,
     .fingerprint = 0xee45eabe36cafb57,
-    .version = "0.9.1",
+    .version = "0.9.2",
     .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
@@ -16,6 +16,10 @@
         .zuid = .{
             .url = "git+https://github.com/KeithBrown39423/zuid#b6129f6cee45bd90b7ac97b8839dc28d21bedcb2",
             .hash = "zuid-2.0.0-AAAAADxXAAA4MAzwwRhfZ9AC2FMPZ8hUrZbfpmJ_azpK",
+        },
+        .zeit = .{
+            .url = "git+https://github.com/rockorager/zeit/#175cf91a641790799e9d676878a9fe814aaed134",
+            .hash = "zeit-0.6.0-5I6bk5daAgC-P60TjxRqW0bYknfCGxJp-03eS9UjGrO7",
         },
     },
 

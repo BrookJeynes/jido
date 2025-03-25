@@ -12,6 +12,7 @@ fn createExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarg
     const libvaxis = b.dependency("vaxis", .{ .target = target }).module("vaxis");
     const fuzzig = b.dependency("fuzzig", .{ .target = target }).module("fuzzig");
     const zuid = b.dependency("zuid", .{ .target = target }).module("zuid");
+    const zeit = b.dependency("zeit", .{ .target = target }).module("zeit");
 
     const exe = b.addExecutable(.{
         .name = exe_name,
@@ -23,6 +24,7 @@ fn createExe(b: *std.Build, exe_name: []const u8, target: std.Build.ResolvedTarg
     exe.root_module.addImport("vaxis", libvaxis);
     exe.root_module.addImport("fuzzig", fuzzig);
     exe.root_module.addImport("zuid", zuid);
+    exe.root_module.addImport("zeit", zeit);
 
     return exe;
 }

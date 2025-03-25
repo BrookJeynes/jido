@@ -71,6 +71,25 @@ pub fn fullPath(self: *Self, relative_path: []const u8) ![]const u8 {
     return try self.dir.realpath(relative_path, &self.path_buf);
 }
 
+pub fn getDirSize(self: Self, dir: std.fs.Dir) !usize {
+    var total_size: usize = 0;
+
+    var walker = try dir.walk(self.alloc);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        switch (entry.kind) {
+            .file => {
+                const stat = try entry.dir.statFile(entry.basename);
+                total_size += stat.size;
+            },
+            else => {},
+        }
+    }
+
+    return total_size;
+}
+
 pub fn populateChildEntries(
     self: *Self,
     relative_path: []const u8,

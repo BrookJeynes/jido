@@ -16,6 +16,7 @@ const Config = struct {
     show_images: bool = true,
     preview_file: bool = true,
     empty_trash_on_exit: bool = false,
+    true_dir_size: bool = false,
     // TODO(10-01-25): This needs to be implemented.
     // command_history_len: usize = 10,
     styles: Styles = .{},
@@ -190,6 +191,7 @@ pub const Keybinds = struct {
     enter_command_mode: Char = @enumFromInt(':'),
     jump_top: Char = @enumFromInt('g'),
     jump_bottom: Char = @enumFromInt('G'),
+    toggle_verbose_file_information: Char = @enumFromInt('v'),
 };
 
 const Styles = struct {

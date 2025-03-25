@@ -52,6 +52,7 @@ tty: vaxis.Tty = undefined,
 state: State = .normal,
 actions: CircStack(Action, actions_len),
 command_history: CommandHistory = CommandHistory{},
+drawer: Drawer = Drawer{},
 
 directories: Directories,
 notification: Notification,
@@ -114,7 +115,6 @@ pub fn deinit(self: *App) void {
 }
 
 pub fn run(self: *App) !void {
-    var drawer = Drawer{};
     try self.directories.populateEntries("");
 
     var loop: vaxis.Loop(Event) = .{
@@ -171,7 +171,7 @@ pub fn run(self: *App) !void {
             }
         }
 
-        try drawer.draw(self);
+        try self.drawer.draw(self);
 
         var buffered = self.tty.bufferedWriter();
         try self.vx.render(buffered.writer().any());

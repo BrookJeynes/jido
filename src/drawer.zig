@@ -6,12 +6,12 @@ const config = &@import("./config.zig").config;
 const vaxis = @import("vaxis");
 const Git = @import("./git.zig");
 const inputToSlice = @import("./event_handlers.zig").inputToSlice;
+const zeit = @import("zeit");
 
 const Drawer = @This();
 
 const top_div: u16 = 1;
 const info_div: u16 = 1;
-const bottom_div: u16 = 1;
 
 // Used to detect whether to re-render an image.
 current_item_path_buf: [std.fs.max_path_bytes]u8 = undefined,
@@ -21,14 +21,15 @@ last_item_path: []u8 = "",
 file_info_buf: [std.fs.max_path_bytes]u8 = undefined,
 file_name_buf: [std.fs.max_path_bytes + 2]u8 = undefined, // +2 to accomodate for [<file_name>]
 git_branch: [1024]u8 = undefined,
+verbose: bool = false,
 
 pub fn draw(self: *Drawer, app: *App) !void {
     const win = app.vx.window();
     win.clear();
 
     const abs_file_path_bar = try self.drawAbsFilePath(app.alloc, &app.directories, win);
-    const file_info_bar = try self.drawFileInfo(&app.directories, win);
-    app.last_known_height = try drawDirList(
+    const file_info_bar = try self.drawFileInfo(app.alloc, &app.directories, win);
+    app.last_known_height = try self.drawDirList(
         &app.directories,
         win,
         abs_file_path_bar,
@@ -81,6 +82,8 @@ fn drawFilePreview(
     win: vaxis.Window,
     file_name_win: vaxis.Window,
 ) !void {
+    const bottom_div: u16 = 1;
+
     const preview_win = win.child(.{
         .x_off = win.width / 2,
         .y_off = top_div + 1,
@@ -116,7 +119,10 @@ fn drawFilePreview(
             }
         },
         .file => file: {
-            var file = app.directories.dir.openFile(entry.name, .{ .mode = .read_only }) catch |err| {
+            var file = app.directories.dir.openFile(
+                entry.name,
+                .{ .mode = .read_only },
+            ) catch |err| {
                 switch (err) {
                     error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                     else => try app.notification.writeErr(.UnknownError),
@@ -233,9 +239,12 @@ fn drawFilePreview(
 
 fn drawFileInfo(
     self: *Drawer,
+    alloc: std.mem.Allocator,
     directories: *Directories,
     win: vaxis.Window,
 ) !vaxis.Window {
+    const bottom_div: u16 = if (self.verbose) 6 else 1;
+
     const file_info_win = win.child(.{
         .x_off = 0,
         .y_off = win.height - bottom_div,
@@ -250,13 +259,53 @@ fn drawFileInfo(
     };
 
     var fbs = std.io.fixedBufferStream(&self.file_info_buf);
+
+    // Selected entry.
     try fbs.writer().print(
-        "{d}/{d} ",
-        .{ directories.entries.selected + 1, directories.entries.len() },
+        "{s}{d}/{d}{s}",
+        .{
+            if (self.verbose) "Entry: " else "",
+            directories.entries.selected + 1,
+            directories.entries.len(),
+            if (self.verbose) "\n" else " ",
+        },
     );
 
+    // Time created / last modified
+    if (self.verbose) lbl: {
+        var maybe_meta: ?std.fs.File.Metadata = null;
+        if (entry.kind == .directory) {
+            maybe_meta = try directories.dir.metadata();
+        } else if (entry.kind == .file) {
+            var file = try directories.dir.openFile(entry.name, .{});
+            maybe_meta = try file.metadata();
+        }
+
+        const meta = maybe_meta orelse break :lbl;
+        var env = try std.process.getEnvMap(alloc);
+        defer env.deinit();
+        const local = try zeit.local(alloc, &env);
+        defer local.deinit();
+
+        const ctime_instant = try zeit.instant(.{
+            .source = .{ .unix_nano = meta.created().? },
+            .timezone = &local,
+        });
+        const ctime = ctime_instant.time();
+        try ctime.strftime(fbs.writer().any(), "Created: %Y-%m-%d %H:%M:%S\n");
+
+        const mtime_instant = try zeit.instant(.{
+            .source = .{ .unix_nano = meta.modified() },
+            .timezone = &local,
+        });
+        const mtime = mtime_instant.time();
+        try mtime.strftime(fbs.writer().any(), "Last modified: %Y-%m-%d %H:%M:%S\n");
+    }
+
+    // File permissions.
     var file_perm_buf: [11]u8 = undefined;
-    const file_perms: ?usize = lbl: {
+    const file_perms: usize = lbl: {
+        if (self.verbose) try fbs.writer().writeAll("Permissions: ");
         var file_perm_fbs = std.io.fixedBufferStream(&file_perm_buf);
 
         if (entry.kind == .directory) {
@@ -268,7 +317,10 @@ fn drawFileInfo(
             "r--", "r-x", "rw-", "rwx",
         };
 
-        const stat = directories.dir.statFile(entry.name) catch break :lbl null;
+        const stat = directories.dir.statFile(entry.name) catch {
+            _ = try file_perm_fbs.write("---------\n");
+            break :lbl 10;
+        };
         // Ignore upper bytes as they represent file type.
         const perms = @as(u9, @truncate(stat.mode));
 
@@ -278,7 +330,11 @@ fn drawFileInfo(
             _ = try file_perm_fbs.write(perm_strings[perm]);
         }
 
-        _ = try file_perm_fbs.write(" ");
+        if (self.verbose) {
+            _ = try file_perm_fbs.write("\n");
+        } else {
+            _ = try file_perm_fbs.write(" ");
+        }
 
         if (entry.kind == .directory) {
             break :lbl 11;
@@ -286,24 +342,46 @@ fn drawFileInfo(
             break :lbl 10;
         }
     };
-    if (file_perms) |perms_bytes| try fbs.writer().writeAll(file_perm_buf[0..perms_bytes]);
+    try fbs.writer().writeAll(file_perm_buf[0..file_perms]);
 
-    if (entry.kind == .directory) {
-        _ = file_info_win.printSegment(.{
-            .text = fbs.getWritten(),
-            .style = config.styles.file_information,
-        }, .{});
-        return file_info_win;
-    }
+    // Size.
+    const size: ?usize = lbl: {
+        const stat = directories.dir.statFile(entry.name) catch break :lbl null;
+        if (entry.kind == .file) {
+            break :lbl stat.size;
+        } else if (entry.kind == .directory) {
+            if (config.true_dir_size) {
+                var dir = directories.dir.openDir(
+                    entry.name,
+                    .{ .iterate = true },
+                ) catch break :lbl null;
+                defer dir.close();
+                break :lbl directories.getDirSize(dir) catch break :lbl null;
+            } else {
+                break :lbl stat.size;
+            }
+        }
 
-    const file_size: u64 = lbl: {
-        const stat = directories.dir.statFile(entry.name) catch break :lbl 0;
-        break :lbl stat.size;
+        break :lbl 0;
     };
-    try fbs.writer().print("{:.2} ", .{std.fmt.fmtIntSizeDec(file_size)});
+    if (size) |s| try fbs.writer().print("{s}{:.2}\n", .{
+        if (self.verbose) "Size: " else "",
+        std.fmt.fmtIntSizeDec(s),
+    });
 
+    // Extension.
     const extension = std.fs.path.extension(entry.name);
-    if (extension.len > 0) try fbs.writer().print("{s} ", .{extension});
+    if (self.verbose) {
+        try fbs.writer().print(
+            "Extension: {s}\n",
+            .{if (entry.kind == .directory) "Dir" else extension},
+        );
+    } else {
+        try fbs.writer().print(
+            "{s} ",
+            .{if (entry.kind == .directory) "dir" else extension},
+        );
+    }
 
     _ = file_info_win.printSegment(.{
         .text = fbs.getWritten(),
@@ -319,6 +397,8 @@ fn drawDirList(
     abs_file_path: vaxis.Window,
     file_information: vaxis.Window,
 ) !u16 {
+    const bottom_div: u16 = 1;
+
     const current_dir_list_win = win.child(.{
         .x_off = 0,
         .y_off = top_div + 1,
@@ -389,7 +469,10 @@ fn drawUserInput(
             if (text_input.buf.realLength() > 0) {
                 text_input.drawWithStyle(
                     user_input_win,
-                    if (std.mem.eql(u8, input, ":UnsupportedCommand")) config.styles.text_input_err else config.styles.text_input,
+                    if (std.mem.eql(u8, input, ":UnsupportedCommand"))
+                        config.styles.text_input_err
+                    else
+                        config.styles.text_input,
                 );
             }
 
