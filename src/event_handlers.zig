@@ -275,8 +275,23 @@ pub fn handleNormalEvent(
                                     defer app.alloc.free(a.new);
                                     defer app.alloc.free(a.old);
 
-                                    // TODO: Will overwrite an item if it has the same name.
-                                    if (app.directories.dir.rename(a.new, a.old)) {
+                                    var had_duplicate = false;
+
+                                    // Handle if item with same name already exists.
+                                    var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                                    const new_path = if (environment.fileExists(app.directories.dir, a.old)) lbl: {
+                                        const extension = std.fs.path.extension(a.old);
+                                        had_duplicate = true;
+                                        break :lbl try std.fmt.bufPrint(
+                                            &new_path_buf,
+                                            "{s}-{s}{s}",
+                                            .{ a.old[0 .. a.old.len - extension.len], zuid.new.v4(), extension },
+                                        );
+                                    } else lbl: {
+                                        break :lbl a.old;
+                                    };
+
+                                    if (app.directories.dir.rename(a.new, new_path)) {
                                         app.directories.clearEntries();
                                         const fuzzy = inputToSlice(app);
                                         app.directories.populateEntries(fuzzy) catch |err| {
@@ -285,7 +300,11 @@ pub fn handleNormalEvent(
                                                 else => try app.notification.writeErr(.UnknownError),
                                             }
                                         };
-                                        try app.notification.writeInfo(.RestoredDelete);
+                                        if (had_duplicate) {
+                                            try app.notification.writeWarn(.DuplicateFileOnUndo);
+                                        } else {
+                                            try app.notification.writeInfo(.RestoredDelete);
+                                        }
                                     } else |_| {
                                         try app.notification.writeErr(.UnableToUndo);
                                     }
@@ -294,8 +313,23 @@ pub fn handleNormalEvent(
                                     defer app.alloc.free(a.new);
                                     defer app.alloc.free(a.old);
 
-                                    // TODO: Will overwrite an item if it has the same name.
-                                    if (app.directories.dir.rename(a.new, a.old)) {
+                                    var had_duplicate = false;
+
+                                    // Handle if item with same name already exists.
+                                    var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                                    const new_path = if (environment.fileExists(app.directories.dir, a.old)) lbl: {
+                                        const extension = std.fs.path.extension(a.old);
+                                        had_duplicate = true;
+                                        break :lbl try std.fmt.bufPrint(
+                                            &new_path_buf,
+                                            "{s}-{s}{s}",
+                                            .{ a.old[0 .. a.old.len - extension.len], zuid.new.v4(), extension },
+                                        );
+                                    } else lbl: {
+                                        break :lbl a.old;
+                                    };
+
+                                    if (app.directories.dir.rename(a.new, new_path)) {
                                         app.directories.clearEntries();
                                         const fuzzy = inputToSlice(app);
                                         app.directories.populateEntries(fuzzy) catch |err| {
@@ -304,7 +338,11 @@ pub fn handleNormalEvent(
                                                 else => try app.notification.writeErr(.UnknownError),
                                             }
                                         };
-                                        try app.notification.writeInfo(.RestoredRename);
+                                        if (had_duplicate) {
+                                            try app.notification.writeWarn(.DuplicateFileOnUndo);
+                                        } else {
+                                            try app.notification.writeInfo(.RestoredRename);
+                                        }
                                     } else |_| {
                                         try app.notification.writeErr(.UnableToUndo);
                                     }
