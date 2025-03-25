@@ -29,7 +29,7 @@ pub fn draw(self: *Drawer, app: *App) !void {
 
     const abs_file_path_bar = try self.drawAbsFilePath(app.alloc, &app.directories, win);
     const file_info_bar = try self.drawFileInfo(app.alloc, &app.directories, win);
-    app.last_known_height = try self.drawDirList(
+    app.last_known_height = try drawDirList(
         &app.directories,
         win,
         abs_file_path_bar,
