@@ -5,11 +5,6 @@ const config = &@import("./config.zig").config;
 const vaxis = @import("vaxis");
 const fuzzig = @import("fuzzig");
 
-const History = struct {
-    selected: usize,
-    offset: usize,
-};
-
 const history_len: usize = 100;
 
 const Self = @This();
@@ -20,7 +15,7 @@ path_buf: [std.fs.max_path_bytes]u8 = undefined,
 file_contents: [4096]u8 = undefined,
 pdf_contents: ?[]u8 = null,
 entries: List(std.fs.Dir.Entry),
-history: CircStack(History, history_len),
+history: CircStack(usize, history_len),
 child_entries: List([]const u8),
 searcher: fuzzig.Ascii,
 
@@ -29,7 +24,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
         .alloc = alloc,
         .dir = try std.fs.cwd().openDir(".", .{ .iterate = true }),
         .entries = List(std.fs.Dir.Entry).init(alloc),
-        .history = CircStack(History, history_len).init(),
+        .history = CircStack(usize, history_len).init(),
         .child_entries = List([]const u8).init(alloc),
         .searcher = try fuzzig.Ascii.init(
             alloc,
@@ -159,8 +154,17 @@ pub fn writeEntries(
     selected_list_item_style: vaxis.Style,
     list_item_style: vaxis.Style,
 ) !void {
-    for (self.entries.all()[self.entries.offset..], 0..) |item, i| {
-        const selected = self.entries.selected - self.entries.offset;
+    const win_height = window.height;
+    var offset: usize = 0;
+
+    while (self.entries.all()[offset..].len > win_height and
+        self.entries.selected >= offset + (win_height / 2))
+    {
+        offset += 1;
+    }
+
+    for (self.entries.all()[offset..], 0..) |item, i| {
+        const selected = self.entries.selected - offset;
         const is_selected = selected == i;
 
         if (i > window.height) continue;

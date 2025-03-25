@@ -8,14 +8,12 @@ pub fn List(comptime T: type) type {
         alloc: std.mem.Allocator,
         items: std.ArrayList(T),
         selected: usize,
-        offset: usize,
 
         pub fn init(alloc: std.mem.Allocator) Self {
             return Self{
                 .alloc = alloc,
                 .items = std.ArrayList(T).init(alloc),
                 .selected = 0,
-                .offset = 0,
             };
         }
 
@@ -30,7 +28,6 @@ pub fn List(comptime T: type) type {
         pub fn clear(self: *Self) void {
             self.items.clearAndFree();
             self.selected = 0;
-            self.offset = 0;
         }
 
         pub fn get(self: Self, index: usize) !T {
@@ -61,42 +58,24 @@ pub fn List(comptime T: type) type {
             return self.items.items.len;
         }
 
-        pub fn next(self: *Self, win_height: usize) void {
+        pub fn next(self: *Self) void {
             if (self.selected + 1 < self.len()) {
                 self.selected += 1;
-                self.updateOffset(win_height, .next);
             }
         }
 
-        pub fn previous(self: *Self, win_height: usize) void {
+        pub fn previous(self: *Self) void {
             if (self.selected > 0) {
                 self.selected -= 1;
-                self.updateOffset(win_height, .previous);
             }
         }
 
-        pub fn updateOffset(self: *Self, win_height: usize, direction: enum { next, previous }) void {
-            if (direction == .next) {
-                if (self.all()[self.offset..].len > win_height and self.selected >= self.offset + (win_height / 2)) {
-                    self.offset += 1;
-                }
-            } else if (direction == .previous) {
-                if (self.offset > 0 and self.selected < self.offset + (win_height / 2)) {
-                    self.offset -= 1;
-                }
-            }
-        }
-
-        pub fn selectLast(self: *Self, win_height: usize) void {
+        pub fn selectLast(self: *Self) void {
             self.selected = self.len() - 1;
-            if (self.selected >= win_height) {
-                self.offset = self.selected - (win_height - 1);
-            }
         }
 
         pub fn selectFirst(self: *Self) void {
             self.selected = 0;
-            self.offset = 0;
         }
     };
 }

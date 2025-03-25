@@ -56,8 +56,6 @@ pub fn handleNormalEvent(
                         };
 
                         for (app.directories.entries.all()) |entry| {
-                            // Update offset as we search for last selected entry.
-                            app.directories.entries.updateOffset(app.last_known_height, .next);
                             if (std.mem.eql(u8, entry.name, prev_selected_name)) return;
                             app.directories.entries.selected += 1;
                         }
@@ -175,7 +173,7 @@ pub fn handleNormalEvent(
                         app.state = .command;
                     },
                     .jump_bottom => {
-                        app.directories.entries.selectLast(app.last_known_height);
+                        app.directories.entries.selectLast();
                     },
                     .jump_top => app.directories.entries.selectFirst(),
                     .toggle_verbose_file_information => app.drawer.verbose = !app.drawer.verbose,
@@ -199,9 +197,8 @@ pub fn handleNormalEvent(
                             };
 
                             if (app.directories.history.pop()) |history| {
-                                if (history.selected < app.directories.entries.len()) {
-                                    app.directories.entries.selected = history.selected;
-                                    app.directories.entries.offset = history.offset;
+                                if (history < app.directories.entries.len()) {
+                                    app.directories.entries.selected = history;
                                 }
                             }
                         } else |err| {
@@ -225,10 +222,7 @@ pub fn handleNormalEvent(
                                     app.directories.dir.close();
                                     app.directories.dir = dir;
 
-                                    _ = app.directories.history.push(.{
-                                        .selected = app.directories.entries.selected,
-                                        .offset = app.directories.entries.offset,
-                                    });
+                                    _ = app.directories.history.push(app.directories.entries.selected);
 
                                     app.directories.clearEntries();
                                     const fuzzy = inputToSlice(app);
@@ -267,10 +261,10 @@ pub fn handleNormalEvent(
                         }
                     },
                     'j', Key.down => {
-                        app.directories.entries.next(app.last_known_height);
+                        app.directories.entries.next();
                     },
                     'k', Key.up => {
-                        app.directories.entries.previous(app.last_known_height);
+                        app.directories.entries.previous();
                     },
                     'u' => {
                         if (app.actions.pop()) |action| {
