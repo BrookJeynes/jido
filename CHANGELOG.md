@@ -1,8 +1,9 @@
 # Changelog
 
-## v0.9.2 (2025-03-23)
+## v0.9.2 (2025-03-25)
 - feat: Added keybind `v` to view additional information about the selected entry.
 - feat: Added config option `true_dir_size` to see the true size of directories.
+- fix: Undoing a delete/rename wont overwrite an item with the same name now.
 
 ## v0.9.1 (2025-03-23)
 - feat: File permissions are now displayed in the file information bar to the 
