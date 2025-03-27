@@ -47,16 +47,12 @@ const Info = enum {
 
 const Warn = enum { DeprecatedConfigPath, DuplicateFileOnUndo };
 
-buf: [1024]u8 = undefined,
+var buf: [1024]u8 = undefined;
+
 style: Style = Style.info,
-fbs: std.io.FixedBufferStream([]u8) = undefined,
+fbs: std.io.FixedBufferStream([]u8) = std.io.fixedBufferStream(&buf),
 /// How long until the notification disappears in seconds.
 timer: i64 = 0,
-
-pub fn init(self: *Self) void {
-    self.fbs = std.io.fixedBufferStream(&self.buf);
-    self.timer = std.time.timestamp();
-}
 
 pub fn write(self: *Self, text: []const u8, style: Style) !void {
     self.fbs.reset();
