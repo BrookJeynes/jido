@@ -181,7 +181,17 @@ pub const Keybinds = struct {
         pub fn jsonParse(alloc: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !@This() {
             const parsed = try std.json.innerParse([]const u8, alloc, source, options);
             if (std.mem.eql(u8, parsed, "")) return error.InvalidCharacter;
-            const unicode = std.unicode.utf8Decode(parsed) catch return error.InvalidCharacter;
+
+            const utf8_byte_sequence_len = std.unicode.utf8ByteSequenceLength(parsed[0]) catch return error.InvalidCharacter;
+            if (parsed.len != utf8_byte_sequence_len) return error.InvalidCharacter;
+            const unicode = switch (utf8_byte_sequence_len) {
+                1 => parsed[0],
+                2 => std.unicode.utf8Decode2(parsed[0..2].*),
+                3 => std.unicode.utf8Decode3(parsed[0..3].*),
+                4 => std.unicode.utf8Decode4(parsed[0..4].*),
+                else => return error.InvalidCharacter,
+            } catch return error.InvalidCharacter;
+
             return @enumFromInt(unicode);
         }
     };
