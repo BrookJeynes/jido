@@ -4,6 +4,7 @@ const environment = @import("./environment.zig");
 const vaxis = @import("vaxis");
 const FileLogger = @import("file_logger.zig");
 const Notification = @import("./notification.zig");
+const App = @import("./app.zig");
 
 const CONFIG_NAME = "config.json";
 const TRASH_DIR_NAME = "trash";
@@ -42,7 +43,7 @@ const Config = struct {
         return try parent.openDir(TRASH_DIR_NAME, .{ .iterate = true });
     }
 
-    pub fn parse(self: *Config, alloc: std.mem.Allocator) !void {
+    pub fn parse(self: *Config, alloc: std.mem.Allocator, app: *App) !void {
         var dir = lbl: {
             if (try environment.getXdgConfigHomeDir()) |home_dir| {
                 defer {
@@ -122,13 +123,17 @@ const Config = struct {
 
                 const res = try key_map.getOrPut(codepoint);
                 if (res.found_existing) {
+                    var keybind_str: [1024]u8 = undefined;
+                    const keybind_str_bytes = try std.unicode.utf8Encode(codepoint, &keybind_str);
+
                     const message = try std.fmt.allocPrint(
                         alloc,
-                        "'{s}' and '{s}' have the same keybind: '{d}'",
-                        .{ res.value_ptr.*, field.name, codepoint },
+                        "'{s}' and '{s}' have the same keybind: '{s}'",
+                        .{ res.value_ptr.*, field.name, keybind_str[0..keybind_str_bytes] },
                     );
                     defer alloc.free(message);
 
+                    try app.notification.write(message, .err);
                     file_logger.write(message, .err) catch {};
 
                     return error.DuplicateKeybind;

@@ -27,7 +27,7 @@ pub fn main() !void {
     var app = try App.init(alloc);
     defer app.deinit();
 
-    config.parse(alloc) catch |err| switch (err) {
+    config.parse(alloc, &app) catch |err| switch (err) {
         error.SyntaxError => {
             try app.notification.writeErr(.ConfigSyntaxError);
         },
@@ -35,7 +35,7 @@ pub fn main() !void {
             try app.notification.writeErr(.InvalidKeybind);
         },
         error.DuplicateKeybind => {
-            try app.notification.writeErr(.DuplicateKeybinds);
+            // Error logged in function
         },
         else => {
             try app.notification.writeErr(.ConfigUnknownError);

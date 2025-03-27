@@ -135,7 +135,7 @@ pub fn run(self: *App) !void {
                     }
 
                     if ((key.codepoint == 'r' and key.mods.ctrl)) {
-                        if (config.parse(self.alloc)) {
+                        if (config.parse(self.alloc, self)) {
                             try self.notification.writeInfo(.ConfigReloaded);
                         } else |err| switch (err) {
                             error.SyntaxError => {
@@ -145,7 +145,7 @@ pub fn run(self: *App) !void {
                                 try self.notification.writeErr(.InvalidKeybind);
                             },
                             error.DuplicateKeybind => {
-                                try self.notification.writeErr(.DuplicateKeybinds);
+                                // Error logged in function
                             },
                             else => {
                                 try self.notification.writeErr(.ConfigUnknownError);
