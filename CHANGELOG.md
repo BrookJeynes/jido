@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.3 (2025-03-27)
+- feat: The keybind " " is now accepted. This allows spacebar to be bound.
+- feat: Duplicate keybind notification now includes additional information.
+- fix: Multi-char keybinds now throw errors instead of crashing.
+- fix: Remove need to init notification handler. This fixes many issues with 
+  the places in the code notifications could be produced.
+
 ## v0.9.2 (2025-03-25)
 - feat: Added keybind `v` to view additional information about the selected entry.
 - feat: Added config option `true_dir_size` to see the true size of directories.
