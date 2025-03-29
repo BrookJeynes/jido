@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.4 (2025-03-29)
+- feat: Added keybind `h` to view help / keybind menu.
+- refactor: `List` drawing logic is now handled by the `Drawer{}`.
+
 ## v0.9.3 (2025-03-27)
 - feat: The keybind " " is now accepted. This allows spacebar to be bound.
 - feat: Duplicate keybind notification now includes additional information.
