@@ -518,6 +518,11 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                                     break :supported;
                                 }
 
+                                if (std.mem.eql(u8, command, ":h")) {
+                                    try commands.displayHelpMenu(app);
+                                    break :supported;
+                                }
+
                                 app.text_input.clearAndFree();
                                 try app.text_input.insertSliceAtCursor(":UnsupportedCommand");
                             }
@@ -526,7 +531,10 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                         },
                         else => {},
                     }
-                    app.state = .normal;
+
+                    // TODO(2025-03-29): Could there be a better way to check
+                    // this?
+                    if (app.state != .help_menu) app.state = .normal;
                     app.directories.entries.selected = selected;
                 },
                 Key.up => {
@@ -571,6 +579,24 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                         else => {},
                     }
                 },
+            }
+        },
+        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
+    }
+}
+
+pub fn handleHelpMenuEvent(app: *App, event: App.Event) !void {
+    switch (event) {
+        .key_press => |key| {
+            switch (key.codepoint) {
+                Key.escape, 'q' => app.state = .normal,
+                'j', Key.down => {
+                    app.help_menu.next();
+                },
+                'k', Key.up => {
+                    app.help_menu.previous();
+                },
+                else => {},
             }
         },
         .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),

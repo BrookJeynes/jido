@@ -30,6 +30,12 @@ pub fn List(comptime T: type) type {
             self.selected = 0;
         }
 
+        pub fn fromArray(self: *Self, array: []const T) !void {
+            for (array) |item| {
+                try self.append(item);
+            }
+        }
+
         pub fn get(self: Self, index: usize) !T {
             if (index + 1 > self.len()) {
                 return error.OutOfBounds;

@@ -148,3 +148,8 @@ pub fn cd(app: *App, path: []const u8) !void {
         }
     }
 }
+
+///Display help menu.
+pub fn displayHelpMenu(app: *App) !void {
+    app.state = .help_menu;
+}

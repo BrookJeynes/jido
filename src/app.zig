@@ -14,6 +14,45 @@ const Key = vaxis.Key;
 const EventHandlers = @import("./event_handlers.zig");
 const CommandHistory = @import("./commands.zig").CommandHistory;
 
+const help_menu_items = [_][]const u8{
+    "Global:",
+    "<CTRL-c>           :Exit.",
+    "<CTRL-r>           :Reload config.",
+    "",
+    "Normal mode:",
+    "j / <Down>         :Go down.",
+    "k / <Up>           :Go up.",
+    "h / <Left> / -     :Go to the parent directory.",
+    "l / <Right>        :Open item or change directory.",
+    "g                  :Go to the top.",
+    "G                  :Go to the bottom.",
+    "c                  :Change directory via path. Will enter input mode.",
+    "R                  :Rename item. Will enter input mode.",
+    "D                  :Delete item.",
+    "u                  :Undo delete/rename.",
+    "d                  :Create directory. Will enter input mode.",
+    "%                  :Create file. Will enter input mode.",
+    "/                  :Fuzzy search directory. Will enter input mode.",
+    ".                  :Toggle hidden files.",
+    ":                  :Allows for Jido commands to be entered. Please refer to the ",
+    "                    \"Command mode\" section for available commands. Will enter ",
+    "                    input mode.",
+    "v                  :Verbose mode. Provides more information about selected entry. ",
+    "",
+    "Input mode:",
+    "<Esc>              :Cancel input.",
+    "<CR>               :Confirm input.",
+    "",
+    "Command mode:",
+    "<Up> / <Down>      :Cycle previous commands.",
+    ":q                 :Exit.",
+    ":h                 :View available keybinds. 'q' to return to app.",
+    ":config            :Navigate to config directory if it exists.",
+    ":trash             :Navigate to trash directory if it exists.",
+    ":empty_trash       :Empty trash if it exists. This action cannot be undone.",
+    ":cd <path>         :Change directory via path. Will enter input mode.",
+};
+
 pub const State = enum {
     normal,
     fuzzy,
@@ -22,6 +61,7 @@ pub const State = enum {
     change_dir,
     rename,
     command,
+    help_menu,
 };
 
 const ActionPaths = struct {
@@ -54,6 +94,7 @@ actions: CircStack(Action, actions_len),
 command_history: CommandHistory = CommandHistory{},
 drawer: Drawer = Drawer{},
 
+help_menu: List([]const u8),
 directories: Directories,
 notification: Notification = Notification{},
 // Assigned in main after config parsing.
@@ -76,12 +117,16 @@ pub fn init(alloc: std.mem.Allocator) !App {
         },
     });
 
+    var help_menu = List([]const u8).init(alloc);
+    try help_menu.fromArray(&help_menu_items);
+
     return App{
         .alloc = alloc,
         .should_quit = false,
         .vx = vx,
         .tty = try vaxis.Tty.init(),
         .directories = try Directories.init(alloc),
+        .help_menu = help_menu,
         .text_input = vaxis.widgets.TextInput.init(alloc, &vx.unicode),
         .actions = CircStack(Action, actions_len).init(),
         .last_known_height = vx.window().height,
@@ -103,6 +148,7 @@ pub fn deinit(self: *App) void {
         self.alloc.free(command);
     }
 
+    self.help_menu.deinit();
     self.directories.deinit();
     self.text_input.deinit();
     self.vx.deinit(self.alloc, self.tty.anyWriter());
@@ -160,6 +206,9 @@ pub fn run(self: *App) !void {
             switch (self.state) {
                 .normal => {
                     try EventHandlers.handleNormalEvent(self, event, &loop);
+                },
+                .help_menu => {
+                    try EventHandlers.handleHelpMenuEvent(self, event);
                 },
                 else => {
                     try EventHandlers.handleInputEvent(self, event);

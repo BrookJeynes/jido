@@ -63,6 +63,7 @@ Input mode:
 Command mode:
 <Up> / <Down>      :Cycle previous commands.
 :q                 :Exit.
+:h                 :View available keybinds. 'q' to return to app.
 :config            :Navigate to config directory if it exists.
 :trash             :Navigate to trash directory if it exists.
 :empty_trash       :Empty trash if it exists. This action cannot be undone.

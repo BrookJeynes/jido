@@ -532,6 +532,9 @@ fn drawUserInput(
 
             win.hideCursor();
         },
+        .help_menu => {
+            win.hideCursor();
+        },
     }
 }
 
