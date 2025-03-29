@@ -106,25 +106,6 @@ pub fn populateChildEntries(
     }
 }
 
-pub fn writeChildEntries(
-    self: *Self,
-    window: vaxis.Window,
-    style: vaxis.Style,
-) !void {
-    for (self.child_entries.all(), 0..) |item, i| {
-        if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
-            continue;
-        }
-
-        if (i > window.height) continue;
-
-        const w = window.child(.{ .y_off = @intCast(i), .height = 1 });
-        w.fill(vaxis.Cell{ .style = style });
-
-        _ = w.print(&.{.{ .text = item, .style = style }}, .{});
-    }
-}
-
 pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
     var it = self.dir.iterate();
     while (try it.next()) |entry| {
@@ -145,41 +126,6 @@ pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
 
     if (config.sort_dirs == true) {
         std.mem.sort(std.fs.Dir.Entry, self.entries.all(), {}, sortEntry);
-    }
-}
-
-pub fn writeEntries(
-    self: *Self,
-    window: vaxis.Window,
-    selected_list_item_style: vaxis.Style,
-    list_item_style: vaxis.Style,
-) !void {
-    const win_height = window.height;
-    var offset: usize = 0;
-
-    while (self.entries.all()[offset..].len > win_height and
-        self.entries.selected >= offset + (win_height / 2))
-    {
-        offset += 1;
-    }
-
-    for (self.entries.all()[offset..], 0..) |item, i| {
-        const selected = self.entries.selected - offset;
-        const is_selected = selected == i;
-
-        if (i > window.height) continue;
-
-        const w = window.child(.{ .y_off = @intCast(i), .height = 1 });
-        w.fill(vaxis.Cell{
-            .style = if (is_selected) selected_list_item_style else list_item_style,
-        });
-
-        _ = w.print(&.{
-            .{
-                .text = item.name,
-                .style = if (is_selected) selected_list_item_style else list_item_style,
-            },
-        }, .{});
     }
 }
 

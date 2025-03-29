@@ -5,6 +5,7 @@ const Directories = @import("./directories.zig");
 const config = &@import("./config.zig").config;
 const vaxis = @import("vaxis");
 const Git = @import("./git.zig");
+const List = @import("./list.zig").List;
 const inputToSlice = @import("./event_handlers.zig").inputToSlice;
 const zeit = @import("zeit");
 
@@ -27,22 +28,44 @@ pub fn draw(self: *Drawer, app: *App) !void {
     const win = app.vx.window();
     win.clear();
 
+    if (app.state == .help_menu) {
+        win.hideCursor();
+        const offset: usize = app.help_menu.selected;
+        for (app.help_menu.all()[offset..], 0..) |item, i| {
+            if (i > win.height) continue;
+
+            const w = win.child(.{ .y_off = @intCast(i), .height = 1 });
+            w.fill(vaxis.Cell{
+                .style = config.styles.list_item,
+            });
+
+            _ = w.print(&.{.{
+                .text = item,
+                .style = config.styles.list_item,
+            }}, .{});
+        }
+
+        return;
+    }
+
     const abs_file_path_bar = try self.drawAbsFilePath(app.alloc, &app.directories, win);
     const file_info_bar = try self.drawFileInfo(app.alloc, &app.directories, win);
     app.last_known_height = try drawDirList(
-        &app.directories,
         win,
+        app.directories.entries,
         abs_file_path_bar,
         file_info_bar,
     );
 
-    if (config.preview_file == true) {
+    if (config.preview_file) {
         const file_name_bar = try self.drawFileName(&app.directories, win);
         try self.drawFilePreview(app, win, file_name_bar);
     }
 
     const input = inputToSlice(app);
     try drawUserInput(app.state, &app.text_input, input, win);
+
+    // Notification should be drawn last.
     try drawNotification(&app.notification, win);
 }
 
@@ -110,7 +133,15 @@ fn drawFilePreview(
         .directory => {
             app.directories.clearChildEntries();
             if (app.directories.populateChildEntries(entry.name)) {
-                try app.directories.writeChildEntries(preview_win, config.styles.list_item);
+                for (app.directories.child_entries.all(), 0..) |item, i| {
+                    if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
+                        continue;
+                    }
+                    if (i > preview_win.height) continue;
+                    const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
+                    w.fill(vaxis.Cell{ .style = config.styles.list_item });
+                    _ = w.print(&.{.{ .text = item, .style = config.styles.list_item }}, .{});
+                }
             } else |err| {
                 switch (err) {
                     error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
@@ -392,8 +423,8 @@ fn drawFileInfo(
 }
 
 fn drawDirList(
-    directories: *Directories,
     win: vaxis.Window,
+    list: List(std.fs.Dir.Entry),
     abs_file_path: vaxis.Window,
     file_information: vaxis.Window,
 ) !u16 {
@@ -405,13 +436,36 @@ fn drawDirList(
         .width = if (config.preview_file) win.width / 2 else win.width,
         .height = win.height - (abs_file_path.height + file_information.height + top_div + bottom_div),
     });
-    try directories.writeEntries(
-        current_dir_list_win,
-        config.styles.selected_list_item,
-        config.styles.list_item,
-    );
 
-    return current_dir_list_win.height;
+    const win_height = current_dir_list_win.height;
+    var offset: usize = 0;
+
+    while (list.all()[offset..].len > win_height and
+        list.selected >= offset + (win_height / 2))
+    {
+        offset += 1;
+    }
+
+    for (list.all()[offset..], 0..) |item, i| {
+        const selected = list.selected - offset;
+        const is_selected = selected == i;
+
+        if (i > win_height) continue;
+
+        const w = current_dir_list_win.child(.{ .y_off = @intCast(i), .height = 1 });
+        w.fill(vaxis.Cell{
+            .style = if (is_selected) config.styles.selected_list_item else config.styles.list_item,
+        });
+
+        _ = w.print(&.{
+            .{
+                .text = item.name,
+                .style = if (is_selected) config.styles.selected_list_item else config.styles.list_item,
+            },
+        }, .{});
+    }
+
+    return win_height;
 }
 
 fn drawAbsFilePath(
