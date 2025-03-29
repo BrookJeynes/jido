@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.9.5 (2025-03-29)
+- feat: Added [-v | --version] and [-h | --help] args.
+
 ## v0.9.4 (2025-03-29)
 - feat: Added keybind `h` to view help / keybind menu.
 - refactor: `List` drawing logic is now handled by the `Drawer{}`.

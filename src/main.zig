@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const options = @import("options");
 const App = @import("app.zig");
 const FileLogger = @import("file_logger.zig");
 const vaxis = @import("vaxis");
@@ -23,6 +24,29 @@ pub fn main() !void {
         }
     }
     const alloc = gpa.allocator();
+
+    var args = std.process.args();
+    _ = args.skip();
+    if (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
+            std.debug.print("jido v{}\n", .{options.version});
+            return;
+        }
+
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            std.debug.print(
+                \\Usage: jido
+                \\
+                \\a lightweight Unix TUI file explorer
+                \\
+                \\Flags:
+                \\  -h, --help                     Show help information and exit.
+                \\  -v, --version                  Print version information and exit.
+                \\
+            , .{});
+            return;
+        }
+    }
 
     var app = try App.init(alloc);
     defer app.deinit();
