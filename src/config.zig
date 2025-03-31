@@ -119,26 +119,28 @@ const Config = struct {
             }
 
             inline for (std.meta.fields(Keybinds)) |field| {
-                const codepoint = @intFromEnum(@field(self.keybinds, field.name));
+                if (@field(self.keybinds, field.name)) |field_value| {
+                    const codepoint = @intFromEnum(field_value);
 
-                const res = try key_map.getOrPut(codepoint);
-                if (res.found_existing) {
-                    var keybind_str: [1024]u8 = undefined;
-                    const keybind_str_bytes = try std.unicode.utf8Encode(codepoint, &keybind_str);
+                    const res = try key_map.getOrPut(codepoint);
+                    if (res.found_existing) {
+                        var keybind_str: [1024]u8 = undefined;
+                        const keybind_str_bytes = try std.unicode.utf8Encode(codepoint, &keybind_str);
 
-                    const message = try std.fmt.allocPrint(
-                        alloc,
-                        "'{s}' and '{s}' have the same keybind: '{s}'",
-                        .{ res.value_ptr.*, field.name, keybind_str[0..keybind_str_bytes] },
-                    );
-                    defer alloc.free(message);
+                        const message = try std.fmt.allocPrint(
+                            alloc,
+                            "'{s}' and '{s}' have the same keybind: '{s}'",
+                            .{ res.value_ptr.*, field.name, keybind_str[0..keybind_str_bytes] },
+                        );
+                        defer alloc.free(message);
 
-                    try app.notification.write(message, .err);
-                    file_logger.write(message, .err) catch {};
+                        try app.notification.write(message, .err);
+                        file_logger.write(message, .err) catch {};
 
-                    return error.DuplicateKeybind;
+                        return error.DuplicateKeybind;
+                    }
+                    res.value_ptr.* = try alloc.dupe(u8, field.name);
                 }
-                res.value_ptr.* = try alloc.dupe(u8, field.name);
             }
         }
 
@@ -196,17 +198,17 @@ pub const Keybinds = struct {
         }
     };
 
-    toggle_hidden_files: Char = @enumFromInt('.'),
-    delete: Char = @enumFromInt('D'),
-    rename: Char = @enumFromInt('R'),
-    create_dir: Char = @enumFromInt('d'),
-    create_file: Char = @enumFromInt('%'),
-    fuzzy_find: Char = @enumFromInt('/'),
-    change_dir: Char = @enumFromInt('c'),
-    enter_command_mode: Char = @enumFromInt(':'),
-    jump_top: Char = @enumFromInt('g'),
-    jump_bottom: Char = @enumFromInt('G'),
-    toggle_verbose_file_information: Char = @enumFromInt('v'),
+    toggle_hidden_files: ?Char = @enumFromInt('.'),
+    delete: ?Char = @enumFromInt('D'),
+    rename: ?Char = @enumFromInt('R'),
+    create_dir: ?Char = @enumFromInt('d'),
+    create_file: ?Char = @enumFromInt('%'),
+    fuzzy_find: ?Char = @enumFromInt('/'),
+    change_dir: ?Char = @enumFromInt('c'),
+    enter_command_mode: ?Char = @enumFromInt(':'),
+    jump_top: ?Char = @enumFromInt('g'),
+    jump_bottom: ?Char = @enumFromInt('G'),
+    toggle_verbose_file_information: ?Char = @enumFromInt('v'),
 };
 
 const Styles = struct {

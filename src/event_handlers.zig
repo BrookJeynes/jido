@@ -26,8 +26,10 @@ pub fn handleNormalEvent(
 
             const maybe_remap: ?std.meta.FieldEnum(Keybinds) = lbl: {
                 inline for (std.meta.fields(Keybinds)) |field| {
-                    if (key.codepoint == @intFromEnum(@field(config.keybinds, field.name))) {
-                        break :lbl comptime std.meta.stringToEnum(std.meta.FieldEnum(Keybinds), field.name) orelse unreachable;
+                    if (@field(config.keybinds, field.name)) |field_value| {
+                        if (key.codepoint == @intFromEnum(field_value)) {
+                            break :lbl comptime std.meta.stringToEnum(std.meta.FieldEnum(Keybinds), field.name) orelse unreachable;
+                        }
                     }
                 }
                 break :lbl null;

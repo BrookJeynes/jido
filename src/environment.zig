@@ -68,6 +68,7 @@ pub fn dirExists(dir: std.fs.Dir, path: []const u8) bool {
     return result;
 }
 
+///Deletes the contents of a directory but not the directory itself.
 ///Returns the amount of files failed to be delete.
 pub fn deleteContents(dir: std.fs.Dir) !usize {
     var failed: usize = 0;

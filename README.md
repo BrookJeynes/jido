@@ -29,7 +29,8 @@ via `zig build --release=safe`.
 
 ## Key manual
 Below are the default keybinds. Keybinds can be overwritten via the `Keybinds`
-config option. See [Configuration](#configuration) for more information.
+config option. Some keybinds are unbound by default, see [Configuration](#configuration) 
+for more information.
 
 ```
 Global:
@@ -100,17 +101,17 @@ Config = struct {
 }
 
 Keybinds = struct {
-    .toggle_hidden_files: Char = '.',
-    .delete: Char = 'D',
-    .rename: Char = 'R',
-    .create_dir: Char = 'd',
-    .create_file: Char = '%',
-    .fuzzy_find: Char = '/',
-    .change_dir: Char = 'c',
-    .enter_command_mode: Char = ':',
-    .jump_top: Char = 'g',
-    .jump_bottom: Char = 'G',
-    .toggle_verbose_file_information: Char = 'v'
+    .toggle_hidden_files: ?Char = '.',
+    .delete: ?Char = 'D',
+    .rename: ?Char = 'R',
+    .create_dir: ?Char = 'd',
+    .create_file: ?Char = '%',
+    .fuzzy_find: ?Char = '/',
+    .change_dir: ?Char = 'c',
+    .enter_command_mode: ?Char = ':',
+    .jump_top: ?Char = 'g',
+    .jump_bottom: ?Char = 'G',
+    .toggle_verbose_file_information: ?Char = 'v'
 }
 
 NotificationStyles = struct {

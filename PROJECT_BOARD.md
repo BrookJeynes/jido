@@ -13,7 +13,7 @@ Key:
     - [ ] Copy folders.
 - [ ] Keybind to unzip archives.
 - [ ] Keybind to hard delete items (bypass trash).
-- [ ] Ability to unbind keys.
+- [x] Ability to unbind keys.
 
 ### Refactors
 - [ ] Better error logging.
