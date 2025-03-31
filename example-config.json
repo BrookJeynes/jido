@@ -4,7 +4,8 @@
     "show_images": true,
     "preview_file": true,
     "keybinds": {
-        "toggle_hidden_files": "h"
+        "toggle_hidden_files": "h",
+        "force_delete": null
     },
     "styles": {
         "selected_list_item": {

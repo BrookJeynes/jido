@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.6 (2025-03-31)
+- feat: Added ability to unbound keybinds.
+- feat: Added force delete keybind. It's unbound by default.
+
 ## v0.9.5 (2025-03-29)
 - feat: Added [-v | --version] and [-h | --help] args.
 

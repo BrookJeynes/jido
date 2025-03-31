@@ -174,11 +174,24 @@ pub fn handleNormalEvent(
                         app.text_input.insertSliceAtCursor(":") catch {};
                         app.state = .command;
                     },
-                    .jump_bottom => {
-                        app.directories.entries.selectLast();
-                    },
+                    .jump_bottom => app.directories.entries.selectLast(),
                     .jump_top => app.directories.entries.selectFirst(),
                     .toggle_verbose_file_information => app.drawer.verbose = !app.drawer.verbose,
+                    .force_delete => {
+                        const entry = lbl: {
+                            const entry = app.directories.getSelected() catch {
+                                try app.notification.writeErr(.UnableToDelete);
+                                return;
+                            };
+                            if (entry) |e| break :lbl e else return;
+                        };
+
+                        app.directories.dir.deleteTree(entry.name) catch {
+                            try app.notification.writeErr(.UnableToDelete);
+                            return;
+                        };
+                        app.directories.removeSelected();
+                    },
                 }
             } else {
                 switch (key.codepoint) {

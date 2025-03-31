@@ -111,7 +111,9 @@ Keybinds = struct {
     .enter_command_mode: ?Char = ':',
     .jump_top: ?Char = 'g',
     .jump_bottom: ?Char = 'G',
-    .toggle_verbose_file_information: ?Char = 'v'
+    .toggle_verbose_file_information: ?Char = 'v',
+    .force_delete: ?Char = null                      -- Files deleted this way are 
+                                                        not recoverable
 }
 
 NotificationStyles = struct {

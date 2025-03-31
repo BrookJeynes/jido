@@ -12,7 +12,7 @@ Key:
     - [ ] Copy files.
     - [ ] Copy folders.
 - [ ] Keybind to unzip archives.
-- [ ] Keybind to hard delete items (bypass trash).
+- [x] Keybind to hard delete items (bypass trash).
 - [x] Ability to unbind keys.
 
 ### Refactors

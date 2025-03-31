@@ -209,6 +209,7 @@ pub const Keybinds = struct {
     jump_top: ?Char = @enumFromInt('g'),
     jump_bottom: ?Char = @enumFromInt('G'),
     toggle_verbose_file_information: ?Char = @enumFromInt('v'),
+    force_delete: ?Char = null,
 };
 
 const Styles = struct {

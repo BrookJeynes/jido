@@ -1,7 +1,7 @@
 .{
     .name = .jido,
     .fingerprint = 0xee45eabe36cafb57,
-    .version = "0.9.5",
+    .version = "0.9.6",
     .minimum_zig_version = "0.14.0",
 
     .dependencies = .{
