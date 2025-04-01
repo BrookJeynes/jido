@@ -20,41 +20,42 @@ const LogLevel = enum {
 
 const FileLogger = @This();
 
-alloc: std.mem.Allocator,
 dir: std.fs.Dir,
+file: ?std.fs.File,
 
-pub fn init(alloc: std.mem.Allocator) !FileLogger {
-    const file_logger = FileLogger{
-        .alloc = alloc,
-        .dir = try config.configDir() orelse return error.UnableToFindConfigDir,
-    };
-
-    if (!environment.fileExists(file_logger.dir, LOG_PATH)) {
-        _ = try file_logger.dir.createFile(LOG_PATH, .{});
+pub fn init(dir: std.fs.Dir) FileLogger {
+    var file: ?std.fs.File = null;
+    if (!environment.fileExists(dir, LOG_PATH)) {
+        file = dir.createFile(LOG_PATH, .{}) catch lbl: {
+            std.log.err("Failed to create log file.", .{});
+            break :lbl null;
+        };
+    } else {
+        file = dir.openFile(LOG_PATH, .{ .mode = .write_only }) catch lbl: {
+            std.log.err("Failed to open log file.", .{});
+            break :lbl null;
+        };
     }
 
-    return file_logger;
+    return .{ .dir = dir, .file = file };
 }
 
 pub fn deinit(self: FileLogger) void {
-    var dir = self.dir;
-    dir.close();
+    if (self.file) |file| {
+        var f = file;
+        f.close();
+    }
 }
 
 pub fn write(self: FileLogger, msg: []const u8, level: LogLevel) !void {
-    var log = try self.dir.openFile(LOG_PATH, .{ .mode = .write_only });
-    defer log.close();
+    const file = if (self.file) |file| file else return error.NoLogFile;
+    if (try file.tryLock(std.fs.File.Lock.shared)) {
+        defer file.unlock();
+        try file.seekFromEnd(0);
 
-    const message = try std.fmt.allocPrint(
-        self.alloc,
-        "({d}) {s}: {s}\n",
-        .{ std.time.timestamp(), LogLevel.toString(level), msg },
-    );
-    defer self.alloc.free(message);
-
-    if (try log.tryLock(std.fs.File.Lock.shared)) {
-        defer log.unlock();
-        try log.seekFromEnd(0);
-        try log.writeAll(message);
+        try file.writer().print(
+            "({d}) {s}: {s}\n",
+            .{ std.time.timestamp(), LogLevel.toString(level), msg },
+        );
     }
 }

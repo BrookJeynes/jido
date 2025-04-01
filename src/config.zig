@@ -106,7 +106,7 @@ const Config = struct {
 
         // Check duplicate keybinds
         {
-            var file_logger = try FileLogger.init(alloc);
+            var file_logger = FileLogger.init(dir);
             defer file_logger.deinit();
 
             var key_map = std.AutoHashMap(u21, []const u8).init(alloc);
@@ -129,12 +129,12 @@ const Config = struct {
 
                         const message = try std.fmt.allocPrint(
                             alloc,
-                            "'{s}' and '{s}' have the same keybind: '{s}'",
+                            "'{s}' and '{s}' have the same keybind: '{s}'. This can cause undefined behaviour.",
                             .{ res.value_ptr.*, field.name, keybind_str[0..keybind_str_bytes] },
                         );
                         defer alloc.free(message);
 
-                        try app.notification.write(message, .err);
+                        app.notification.write(message, .err) catch {};
                         file_logger.write(message, .err) catch {};
 
                         return error.DuplicateKeybind;

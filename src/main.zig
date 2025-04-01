@@ -66,7 +66,7 @@ pub fn main() !void {
         },
     };
 
-    app.file_logger = try FileLogger.init(alloc);
+    app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else null;
 
     try app.run();
 }

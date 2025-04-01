@@ -93,8 +93,7 @@ drawer: Drawer = Drawer{},
 help_menu: List([]const u8),
 directories: Directories,
 notification: Notification = Notification{},
-// Assigned in main after config parsing.
-file_logger: FileLogger = undefined,
+file_logger: ?FileLogger = null,
 
 text_input: vaxis.widgets.TextInput,
 text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
@@ -160,7 +159,7 @@ pub fn deinit(self: *App) void {
     self.text_input.deinit();
     self.vx.deinit(self.alloc, self.tty.anyWriter());
     self.tty.deinit();
-    self.file_logger.deinit();
+    if (self.file_logger) |file_logger| file_logger.deinit();
 }
 
 pub fn run(self: *App) !void {

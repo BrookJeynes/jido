@@ -215,6 +215,7 @@ pub fn handleNormalEvent(
                                             );
                                             defer app.alloc.free(message);
                                             app.notification.write(message, .err) catch {};
+                                            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                                             break :lbl null;
                                         }),
                                         .entry = .{
@@ -258,6 +259,7 @@ pub fn handleNormalEvent(
                                     const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to open directory '{s}'.", .{ yanked.entry.name, yanked.dir });
                                     defer app.alloc.free(message);
                                     app.notification.write(message, .err) catch {};
+                                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                                     return;
                                 };
                                 defer source_dir.close();
@@ -272,12 +274,14 @@ pub fn handleNormalEvent(
                                         const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - the original file was deleted or moved.", .{yanked.entry.name});
                                         defer app.alloc.free(message);
                                         app.notification.write(message, .err) catch {};
+                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                                         return;
                                     },
                                     else => {
                                         const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - {}.", .{ yanked.entry.name, err });
                                         defer app.alloc.free(message);
                                         app.notification.write(message, .err) catch {};
+                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                                         return;
                                     },
                                 };
@@ -293,6 +297,7 @@ pub fn handleNormalEvent(
                                         );
                                         defer app.alloc.free(message);
                                         app.notification.write(message, .err) catch {};
+                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                                         return;
                                     };
 

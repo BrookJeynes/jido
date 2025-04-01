@@ -1,4 +1,5 @@
 const std = @import("std");
+const FileLogger = @import("file_logger.zig");
 
 const Self = @This();
 
