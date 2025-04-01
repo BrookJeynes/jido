@@ -38,6 +38,8 @@ const help_menu_items = [_][]const u8{
     "                    \"Command mode\" section for available commands. Will enter ",
     "                    input mode.",
     "v                  :Verbose mode. Provides more information about selected entry. ",
+    "y                  :Yank selected item.",
+    "p                  :Past yanked item.",
     "",
     "Input mode:",
     "<Esc>              :Cancel input.",
@@ -74,6 +76,7 @@ const ActionPaths = struct {
 pub const Action = union(enum) {
     delete: ActionPaths,
     rename: ActionPaths,
+    paste: []const u8,
 };
 
 pub const Event = union(enum) {
@@ -103,6 +106,7 @@ file_logger: FileLogger = undefined,
 text_input: vaxis.widgets.TextInput,
 text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 
+yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
 image: ?vaxis.Image = null,
 last_known_height: usize,
 
@@ -140,7 +144,13 @@ pub fn deinit(self: *App) void {
                 self.alloc.free(a.new);
                 self.alloc.free(a.old);
             },
+            .paste => |a| self.alloc.free(a),
         }
+    }
+
+    if (self.yanked) |yanked| {
+        self.alloc.free(yanked.dir);
+        self.alloc.free(yanked.entry.name);
     }
 
     self.command_history.resetSelected();

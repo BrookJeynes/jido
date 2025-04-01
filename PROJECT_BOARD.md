@@ -9,7 +9,7 @@ Key:
 
 ### New features
 - [ ] File/Folder movement.
-    - [ ] Copy files.
+    - [x] Copy files.
     - [ ] Copy folders.
 - [ ] Keybind to unzip archives.
 - [x] Keybind to hard delete items (bypass trash).

@@ -1,4 +1,5 @@
 const std = @import("std");
+const zuid = @import("zuid");
 const builtin = @import("builtin");
 
 pub fn getHomeDir() !?std.fs.Dir {
@@ -21,6 +22,30 @@ pub fn getEditor() ?[]const u8 {
         }
     }
     return null;
+}
+
+pub fn checkDuplicatePath(
+    buf: []u8,
+    dir: std.fs.Dir,
+    relative_path: []const u8,
+) std.fmt.BufPrintError!struct {
+    path: []const u8,
+    had_duplicate: bool,
+} {
+    var had_duplicate = false;
+    const new_path = if (fileExists(dir, relative_path)) lbl: {
+        had_duplicate = true;
+        const extension = std.fs.path.extension(relative_path);
+        break :lbl try std.fmt.bufPrint(
+            buf,
+            "{s}-{s}{s}",
+            .{ relative_path[0 .. relative_path.len - extension.len], zuid.new.v4(), extension },
+        );
+    } else lbl: {
+        break :lbl try std.fmt.bufPrint(buf, "{s}", .{relative_path});
+    };
+
+    return .{ .path = new_path, .had_duplicate = had_duplicate };
 }
 
 pub fn openFile(

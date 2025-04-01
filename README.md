@@ -56,6 +56,8 @@ d                  :Create directory. Will enter input mode.
                     "Command mode" section for available commands. Will enter 
                     input mode.
 v                  :Verbose mode. Provides more information about selected entry. 
+y                  :Yank selected item. 
+p                  :Past yanked item. 
 
 Input mode:
 <Esc>              :Cancel input.
@@ -114,6 +116,8 @@ Keybinds = struct {
     .toggle_verbose_file_information: ?Char = 'v',
     .force_delete: ?Char = null                      -- Files deleted this way are 
                                                         not recoverable
+    .yank: ?Char = 'y'
+    .paste: ?Char = 'p'
 }
 
 NotificationStyles = struct {

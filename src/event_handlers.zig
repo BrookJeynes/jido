@@ -192,6 +192,141 @@ pub fn handleNormalEvent(
                         };
                         app.directories.removeSelected();
                     },
+                    .yank => {
+                        if (app.yanked) |yanked| {
+                            app.alloc.free(yanked.dir);
+                            app.alloc.free(yanked.entry.name);
+                        }
+
+                        app.yanked = lbl: {
+                            const entry = (app.directories.getSelected() catch {
+                                app.notification.write("Failed to yank item - no item selected.", .warn) catch {};
+                                break :lbl null;
+                            }) orelse break :lbl null;
+
+                            switch (entry.kind) {
+                                .file => {
+                                    break :lbl .{
+                                        .dir = try app.alloc.dupe(u8, app.directories.fullPath(".") catch {
+                                            const message = try std.fmt.allocPrint(
+                                                app.alloc,
+                                                "Failed to yank '{s}' - unable to retrieve directory path.",
+                                                .{entry.name},
+                                            );
+                                            defer app.alloc.free(message);
+                                            app.notification.write(message, .err) catch {};
+                                            break :lbl null;
+                                        }),
+                                        .entry = .{
+                                            .kind = entry.kind,
+                                            .name = try app.alloc.dupe(u8, entry.name),
+                                        },
+                                    };
+                                },
+                                else => {
+                                    const message = try std.fmt.allocPrint(
+                                        app.alloc,
+                                        "Failed to yank '{s}' - unsupported file type '{s}'.",
+                                        .{ entry.name, @tagName(entry.kind) },
+                                    );
+                                    defer app.alloc.free(message);
+                                    app.notification.write(message, .warn) catch {};
+                                    break :lbl null;
+                                },
+                            }
+                        };
+                        if (app.yanked) |y| {
+                            const message = try std.fmt.allocPrint(app.alloc, "Yanked '{s}'.", .{y.entry.name});
+                            defer app.alloc.free(message);
+                            app.notification.write(message, .info) catch {};
+                        }
+                    },
+                    .paste => {
+                        const yanked = if (app.yanked) |y| y else return;
+
+                        var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                        const new_path_res = environment.checkDuplicatePath(&new_path_buf, app.directories.dir, yanked.entry.name) catch {
+                            const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - path too long.", .{yanked.entry.name});
+                            defer app.alloc.free(message);
+                            app.notification.write(message, .err) catch {};
+                            return;
+                        };
+
+                        switch (yanked.entry.kind) {
+                            .file => {
+                                var source_dir = std.fs.openDirAbsolute(yanked.dir, .{ .iterate = true }) catch {
+                                    const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to open directory '{s}'.", .{ yanked.entry.name, yanked.dir });
+                                    defer app.alloc.free(message);
+                                    app.notification.write(message, .err) catch {};
+                                    return;
+                                };
+                                defer source_dir.close();
+                                std.fs.Dir.copyFile(
+                                    source_dir,
+                                    yanked.entry.name,
+                                    app.directories.dir,
+                                    new_path_res.path,
+                                    .{},
+                                ) catch |err| switch (err) {
+                                    error.FileNotFound => {
+                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - the original file was deleted or moved.", .{yanked.entry.name});
+                                        defer app.alloc.free(message);
+                                        app.notification.write(message, .err) catch {};
+                                        return;
+                                    },
+                                    else => {
+                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - {}.", .{ yanked.entry.name, err });
+                                        defer app.alloc.free(message);
+                                        app.notification.write(message, .err) catch {};
+                                        return;
+                                    },
+                                };
+
+                                // Append action to undo history.
+                                {
+                                    var new_path_abs_buf: [std.fs.max_path_bytes]u8 = undefined;
+                                    const new_path_abs = app.directories.dir.realpath(new_path_res.path, &new_path_abs_buf) catch {
+                                        const message = try std.fmt.allocPrint(
+                                            app.alloc,
+                                            "Failed to push copy action for '{s}' to undo history - unable to retrieve absolute directory path for '{s}'. This action will not be able to be undone via the `undo` keybind.",
+                                            .{ new_path_res.path, yanked.entry.name },
+                                        );
+                                        defer app.alloc.free(message);
+                                        app.notification.write(message, .err) catch {};
+                                        return;
+                                    };
+
+                                    if (app.actions.push(.{
+                                        .paste = try app.alloc.dupe(u8, new_path_abs),
+                                    })) |prev_elem| {
+                                        app.alloc.free(prev_elem.delete.prev_path);
+                                        app.alloc.free(prev_elem.delete.new_path);
+                                    }
+                                }
+
+                                const message = try std.fmt.allocPrint(app.alloc, "Copied '{s}'.", .{yanked.entry.name});
+                                defer app.alloc.free(message);
+                                app.notification.write(message, .info) catch {};
+                            },
+                            else => {
+                                const message = try std.fmt.allocPrint(
+                                    app.alloc,
+                                    "Failed to copy '{s}' - unsupported file type '{s}'.",
+                                    .{ yanked.entry.name, @tagName(yanked.entry.kind) },
+                                );
+                                defer app.alloc.free(message);
+                                app.notification.write(message, .warn) catch {};
+                            },
+                        }
+
+                        app.directories.clearEntries();
+                        app.directories.populateEntries("") catch |err| {
+                            switch (err) {
+                                error.AccessDenied => app.notification.writeErr(.PermissionDenied) catch {},
+                                else => app.notification.writeErr(.UnknownError) catch {},
+                            }
+                        };
+                    },
                 }
             } else {
                 switch (key.codepoint) {
@@ -287,35 +422,21 @@ pub fn handleNormalEvent(
 
                             switch (action) {
                                 .delete => |a| {
-                                    defer app.alloc.free(a.new);
-                                    defer app.alloc.free(a.old);
+                                    defer app.alloc.free(a.new_path);
+                                    defer app.alloc.free(a.prev_path);
 
-                                    var had_duplicate = false;
-
-                                    // Handle if item with same name already exists.
                                     var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                                    const new_path = if (environment.fileExists(app.directories.dir, a.old)) lbl: {
-                                        const extension = std.fs.path.extension(a.old);
-                                        had_duplicate = true;
-                                        break :lbl try std.fmt.bufPrint(
-                                            &new_path_buf,
-                                            "{s}-{s}{s}",
-                                            .{ a.old[0 .. a.old.len - extension.len], zuid.new.v4(), extension },
-                                        );
-                                    } else lbl: {
-                                        break :lbl a.old;
-                                    };
+                                    const new_path_res = try environment.checkDuplicatePath(&new_path_buf, app.directories.dir, a.prev_path);
 
-                                    if (app.directories.dir.rename(a.new, new_path)) {
+                                    if (app.directories.dir.rename(a.new_path, new_path_res.path)) {
                                         app.directories.clearEntries();
-                                        const fuzzy = inputToSlice(app);
-                                        app.directories.populateEntries(fuzzy) catch |err| {
+                                        app.directories.populateEntries("") catch |err| {
                                             switch (err) {
                                                 error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                                                 else => try app.notification.writeErr(.UnknownError),
                                             }
                                         };
-                                        if (had_duplicate) {
+                                        if (new_path_res.had_duplicate) {
                                             try app.notification.writeWarn(.DuplicateFileOnUndo);
                                         } else {
                                             try app.notification.writeInfo(.RestoredDelete);
@@ -361,6 +482,22 @@ pub fn handleNormalEvent(
                                     } else |_| {
                                         try app.notification.writeErr(.UnableToUndo);
                                     }
+                                },
+                                .paste => |path| {
+                                    defer app.alloc.free(path);
+
+                                    app.directories.dir.deleteTree(path) catch {
+                                        try app.notification.writeErr(.UnableToUndo);
+                                        return;
+                                    };
+
+                                    app.directories.clearEntries();
+                                    app.directories.populateEntries("") catch |err| {
+                                        switch (err) {
+                                            error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
+                                            else => try app.notification.writeErr(.UnknownError),
+                                        }
+                                    };
                                 },
                             }
 
