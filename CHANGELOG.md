@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.7 (2025-04-01)
+- feat: Added ability to copy folders.
+  This is done by (y)anking the file, then (p)asting in the desired directory.
+  This action can be (u)ndone and behind the scenes is a deletion.
+- fix: Allow the cursor to be moved left and right.
+- refactor: Changed action struct field names to be more clear.
+- refactor: Better ergonomics around writing to the log file.
+
 ## v0.9.6 (2025-03-31)
 - feat: Added ability to unbound keybinds.
 - feat: Added force delete keybind. It's unbound by default.
