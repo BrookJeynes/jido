@@ -66,16 +66,9 @@ pub const State = enum {
     help_menu,
 };
 
-const ActionPaths = struct {
-    /// Allocated.
-    old: []const u8,
-    /// Allocated.
-    new: []const u8,
-};
-
 pub const Action = union(enum) {
-    delete: ActionPaths,
-    rename: ActionPaths,
+    delete: struct { prev_path: []const u8, new_path: []const u8 },
+    rename: struct { prev_path: []const u8, new_path: []const u8 },
     paste: []const u8,
 };
 
@@ -140,9 +133,13 @@ pub fn init(alloc: std.mem.Allocator) !App {
 pub fn deinit(self: *App) void {
     while (self.actions.pop()) |action| {
         switch (action) {
-            .delete, .rename => |a| {
-                self.alloc.free(a.new);
-                self.alloc.free(a.old);
+            .delete => |a| {
+                self.alloc.free(a.new_path);
+                self.alloc.free(a.prev_path);
+            },
+            .rename => |a| {
+                self.alloc.free(a.new_path);
+                self.alloc.free(a.prev_path);
             },
             .paste => |a| self.alloc.free(a),
         }

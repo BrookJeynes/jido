@@ -74,14 +74,14 @@ pub fn handleNormalEvent(
                             if (entry) |e| break :lbl e else return;
                         };
 
-                        var old_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                        const old_path = try app.alloc.dupe(u8, try app.directories.dir.realpath(entry.name, &old_path_buf));
+                        var prev_path_buf: [std.fs.max_path_bytes]u8 = undefined;
+                        const prev_path = try app.alloc.dupe(u8, try app.directories.dir.realpath(entry.name, &prev_path_buf));
 
                         var trash_dir = dir: {
                             notfound: {
                                 break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
                             }
-                            app.alloc.free(old_path);
+                            app.alloc.free(prev_path);
                             try app.notification.writeErr(.ConfigPathNotFound);
                             return;
                         };
@@ -89,9 +89,9 @@ pub fn handleNormalEvent(
                         var trash_dir_path_buf: [std.fs.max_path_bytes]u8 = undefined;
                         const trash_dir_path = try trash_dir.realpath(".", &trash_dir_path_buf);
 
-                        if (std.mem.eql(u8, old_path, trash_dir_path)) {
+                        if (std.mem.eql(u8, prev_path, trash_dir_path)) {
                             try app.notification.writeErr(.CannotDeleteTrashDir);
-                            app.alloc.free(old_path);
+                            app.alloc.free(prev_path);
                             return;
                         }
 
@@ -100,10 +100,10 @@ pub fn handleNormalEvent(
 
                         if (app.directories.dir.rename(entry.name, tmp_path)) {
                             if (app.actions.push(.{
-                                .delete = .{ .old = old_path, .new = tmp_path },
+                                .delete = .{ .prev_path = prev_path, .new_path = tmp_path },
                             })) |prev_elem| {
-                                app.alloc.free(prev_elem.delete.old);
-                                app.alloc.free(prev_elem.delete.new);
+                                app.alloc.free(prev_elem.delete.prev_path);
+                                app.alloc.free(prev_elem.delete.new_path);
                             }
 
                             try app.notification.writeInfo(.Deleted);
@@ -113,7 +113,7 @@ pub fn handleNormalEvent(
                                 error.RenameAcrossMountPoints => try app.notification.writeErr(.UnableToDeleteAcrossMountPoints),
                                 else => try app.notification.writeErr(.UnableToDelete),
                             }
-                            app.alloc.free(old_path);
+                            app.alloc.free(prev_path);
                             app.alloc.free(tmp_path);
                         }
                     },
@@ -446,35 +446,21 @@ pub fn handleNormalEvent(
                                     }
                                 },
                                 .rename => |a| {
-                                    defer app.alloc.free(a.new);
-                                    defer app.alloc.free(a.old);
+                                    defer app.alloc.free(a.new_path);
+                                    defer app.alloc.free(a.prev_path);
 
-                                    var had_duplicate = false;
-
-                                    // Handle if item with same name already exists.
                                     var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-                                    const new_path = if (environment.fileExists(app.directories.dir, a.old)) lbl: {
-                                        const extension = std.fs.path.extension(a.old);
-                                        had_duplicate = true;
-                                        break :lbl try std.fmt.bufPrint(
-                                            &new_path_buf,
-                                            "{s}-{s}{s}",
-                                            .{ a.old[0 .. a.old.len - extension.len], zuid.new.v4(), extension },
-                                        );
-                                    } else lbl: {
-                                        break :lbl a.old;
-                                    };
+                                    const new_path_res = try environment.checkDuplicatePath(&new_path_buf, app.directories.dir, a.prev_path);
 
-                                    if (app.directories.dir.rename(a.new, new_path)) {
+                                    if (app.directories.dir.rename(a.new_path, new_path_res.path)) {
                                         app.directories.clearEntries();
-                                        const fuzzy = inputToSlice(app);
-                                        app.directories.populateEntries(fuzzy) catch |err| {
+                                        app.directories.populateEntries("") catch |err| {
                                             switch (err) {
                                                 error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                                                 else => try app.notification.writeErr(.UnknownError),
                                             }
                                         };
-                                        if (had_duplicate) {
+                                        if (new_path_res.had_duplicate) {
                                             try app.notification.writeWarn(.DuplicateFileOnUndo);
                                         } else {
                                             try app.notification.writeInfo(.RestoredRename);
@@ -590,31 +576,31 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                             var dir_prefix_buf: [std.fs.max_path_bytes]u8 = undefined;
                             const dir_prefix = try app.directories.dir.realpath(".", &dir_prefix_buf);
 
-                            const old = lbl: {
+                            const entry = lbl: {
                                 const entry = app.directories.getSelected() catch {
                                     try app.notification.writeErr(.UnableToRename);
                                     return;
                                 };
                                 if (entry) |e| break :lbl e else return;
                             };
-                            const new = inputToSlice(app);
+                            const new_path = inputToSlice(app);
 
-                            if (environment.fileExists(app.directories.dir, new)) {
+                            if (environment.fileExists(app.directories.dir, new_path)) {
                                 try app.notification.writeErr(.ItemAlreadyExists);
                             } else {
-                                app.directories.dir.rename(old.name, new) catch |err| switch (err) {
+                                app.directories.dir.rename(entry.name, new_path) catch |err| switch (err) {
                                     error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
                                     error.PathAlreadyExists => try app.notification.writeErr(.ItemAlreadyExists),
                                     else => try app.notification.writeErr(.UnknownError),
                                 };
                                 if (app.actions.push(.{
                                     .rename = .{
-                                        .old = try std.fs.path.join(app.alloc, &.{ dir_prefix, old.name }),
-                                        .new = try std.fs.path.join(app.alloc, &.{ dir_prefix, new }),
+                                        .prev_path = try std.fs.path.join(app.alloc, &.{ dir_prefix, entry.name }),
+                                        .new_path = try std.fs.path.join(app.alloc, &.{ dir_prefix, new_path }),
                                     },
                                 })) |prev_elem| {
-                                    app.alloc.free(prev_elem.rename.old);
-                                    app.alloc.free(prev_elem.rename.new);
+                                    app.alloc.free(prev_elem.rename.prev_path);
+                                    app.alloc.free(prev_elem.rename.new_path);
                                 }
 
                                 try app.notification.writeInfo(.Renamed);
@@ -664,7 +650,6 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                                     break :supported;
                                 }
 
-                                // TODO(06-01-25): Add a confirmation for this.
                                 if (std.mem.eql(u8, command, ":empty_trash")) {
                                     try commands.emptyTrash(app);
                                     break :supported;
