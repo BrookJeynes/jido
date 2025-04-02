@@ -53,16 +53,25 @@ pub fn main() !void {
 
     config.parse(alloc, &app) catch |err| switch (err) {
         error.SyntaxError => {
-            try app.notification.writeErr(.ConfigSyntaxError);
+            app.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
+                std.log.err("Encountered a syntax error while parsing the config file.", .{});
+            };
         },
         error.InvalidCharacter => {
-            try app.notification.writeErr(.InvalidKeybind);
+            app.notification.write("One or more overriden keybinds are invalid.", .err) catch {
+                std.log.err("One or more overriden keybinds are invalid.", .{});
+            };
         },
         error.DuplicateKeybind => {
             // Error logged in function
         },
         else => {
-            try app.notification.writeErr(.ConfigUnknownError);
+            const message = try std.fmt.allocPrint(alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
+            defer alloc.free(message);
+
+            app.notification.write(message, .err) catch {
+                std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
+            };
         },
     };
 

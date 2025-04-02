@@ -162,8 +162,23 @@ pub fn deinit(self: *App) void {
     if (self.file_logger) |file_logger| file_logger.deinit();
 }
 
+pub fn inputToSlice(self: *App) []const u8 {
+    self.text_input.buf.cursor = self.text_input.buf.realLength();
+    return self.text_input.sliceToCursor(&self.text_input_buf);
+}
+
+pub fn repopulateDirectory(self: *App, fuzzy: []const u8) error{OutOfMemory}!void {
+    self.directories.clearEntries();
+    self.directories.populateEntries(fuzzy) catch |err| {
+        const message = try std.fmt.allocPrint(self.alloc, "Failed to read directory entries - {}.", .{err});
+        defer self.alloc.free(message);
+        self.notification.write(message, .err) catch {};
+        if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+    };
+}
+
 pub fn run(self: *App) !void {
-    try self.directories.populateEntries("");
+    try self.repopulateDirectory("");
 
     var loop: vaxis.Loop(Event) = .{
         .vaxis = &self.vx,
@@ -188,19 +203,28 @@ pub fn run(self: *App) !void {
 
                     if ((key.codepoint == 'r' and key.mods.ctrl)) {
                         if (config.parse(self.alloc, self)) {
-                            try self.notification.writeInfo(.ConfigReloaded);
+                            self.notification.write("Reloaded configuration file.", .info) catch {};
                         } else |err| switch (err) {
                             error.SyntaxError => {
-                                try self.notification.writeErr(.ConfigSyntaxError);
+                                self.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
+                                    std.log.err("Encountered a syntax error while parsing the config file.", .{});
+                                };
                             },
                             error.InvalidCharacter => {
-                                try self.notification.writeErr(.InvalidKeybind);
+                                self.notification.write("One or more overriden keybinds are invalid.", .err) catch {
+                                    std.log.err("One or more overriden keybinds are invalid.", .{});
+                                };
                             },
                             error.DuplicateKeybind => {
                                 // Error logged in function
                             },
                             else => {
-                                try self.notification.writeErr(.ConfigUnknownError);
+                                const message = try std.fmt.allocPrint(self.alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
+                                defer self.alloc.free(message);
+
+                                self.notification.write(message, .err) catch {
+                                    std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
+                                };
                             },
                         }
                     }
@@ -230,10 +254,31 @@ pub fn run(self: *App) !void {
     }
 
     if (config.empty_trash_on_exit) {
-        if (try config.trashDir()) |dir| {
-            var trash_dir = dir;
-            defer trash_dir.close();
-            _ = try environment.deleteContents(trash_dir);
+        var trash_dir = dir: {
+            notfound: {
+                break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
+            }
+            if (self.file_logger) |file_logger| file_logger.write("Failed to open trash directory.", .err) catch {
+                std.log.err("Failed to open trash directory.", .{});
+            };
+            return;
+        };
+        defer trash_dir.close();
+
+        const failed = environment.deleteContents(trash_dir) catch |err| {
+            const message = try std.fmt.allocPrint(self.alloc, "Failed to empty trash - {}.", .{err});
+            defer self.alloc.free(message);
+            if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {
+                std.log.err("Failed to empty trash - {}.", .{err});
+            };
+            return;
+        };
+        if (failed > 0) {
+            const message = try std.fmt.allocPrint(self.alloc, "Failed to empty {d} items from the trash.", .{failed});
+            defer self.alloc.free(message);
+            if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {
+                std.log.err("Failed to empty {d} items from the trash.", .{failed});
+            };
         }
     }
 }

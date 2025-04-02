@@ -28,7 +28,7 @@ pub fn checkDuplicatePath(
     buf: []u8,
     dir: std.fs.Dir,
     relative_path: []const u8,
-) std.fmt.BufPrintError!struct {
+) error{NoSpaceLeft}!struct {
     path: []const u8,
     had_duplicate: bool,
 } {

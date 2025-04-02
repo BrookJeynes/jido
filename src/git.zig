@@ -2,12 +2,13 @@ const std = @import("std");
 
 /// Callers owns memory returned.
 pub fn getGitBranch(alloc: std.mem.Allocator, dir: std.fs.Dir) !?[]const u8 {
-    var file = dir.openFile(".git/HEAD", .{}) catch return null;
+    var file = try dir.openFile(".git/HEAD", .{});
     defer file.close();
 
     var buf: [1024]u8 = undefined;
-    const bytes = file.readAll(&buf) catch return null;
+    const bytes = try file.readAll(&buf);
 
+    // TODO(2025-04-01): This won't work for branches with / in their name.
     var it = std.mem.splitBackwardsSequence(u8, buf[0..bytes], "/");
     const branch = it.next() orelse return null;
     if (std.mem.eql(u8, branch, "")) return null;

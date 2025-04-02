@@ -16,7 +16,7 @@ Key:
 - [x] Ability to unbind keys.
 
 ### Refactors
-- [ ] Better error logging.
+- [x] Better error logging.
       There are many places errors could be caught, logged, and handled instead
       of crashing.
 - [ ] Improve image reading.

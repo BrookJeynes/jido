@@ -1,12 +1,12 @@
 const std = @import("std");
 const App = @import("./app.zig");
+const FileLogger = @import("./file_logger.zig");
 const Notification = @import("./notification.zig");
 const Directories = @import("./directories.zig");
 const config = &@import("./config.zig").config;
 const vaxis = @import("vaxis");
 const Git = @import("./git.zig");
 const List = @import("./list.zig").List;
-const inputToSlice = @import("./event_handlers.zig").inputToSlice;
 const zeit = @import("zeit");
 
 const Drawer = @This();
@@ -24,7 +24,7 @@ file_name_buf: [std.fs.max_path_bytes + 2]u8 = undefined, // +2 to accomodate fo
 git_branch: [1024]u8 = undefined,
 verbose: bool = false,
 
-pub fn draw(self: *Drawer, app: *App) !void {
+pub fn draw(self: *Drawer, app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
     const win = app.vx.window();
     win.clear();
 
@@ -48,9 +48,9 @@ pub fn draw(self: *Drawer, app: *App) !void {
         return;
     }
 
-    const abs_file_path_bar = try self.drawAbsFilePath(app.alloc, &app.directories, win);
+    const abs_file_path_bar = try self.drawAbsFilePath(app, win);
     const file_info_bar = try self.drawFileInfo(app.alloc, &app.directories, win);
-    app.last_known_height = try drawDirList(
+    app.last_known_height = drawDirList(
         win,
         app.directories.entries,
         abs_file_path_bar,
@@ -62,18 +62,18 @@ pub fn draw(self: *Drawer, app: *App) !void {
         try self.drawFilePreview(app, win, file_name_bar);
     }
 
-    const input = inputToSlice(app);
-    try drawUserInput(app.state, &app.text_input, input, win);
+    const input = app.inputToSlice();
+    drawUserInput(app.state, &app.text_input, input, win);
 
     // Notification should be drawn last.
-    try drawNotification(&app.notification, win);
+    drawNotification(&app.notification, &app.file_logger, win);
 }
 
 fn drawFileName(
     self: *Drawer,
     directories: *Directories,
     win: vaxis.Window,
-) !vaxis.Window {
+) error{NoSpaceLeft}!vaxis.Window {
     const file_name_bar = win.child(.{
         .x_off = win.width / 2,
         .y_off = 0,
@@ -81,20 +81,13 @@ fn drawFileName(
         .height = top_div,
     });
 
-    lbl: {
-        const entry = directories.getSelected() catch break :lbl;
-        if (entry) |e| {
-            const file_name = try std.fmt.bufPrint(
-                &self.file_name_buf,
-                "[{s}]",
-                .{e.name},
-            );
-            _ = file_name_bar.print(&.{vaxis.Segment{
-                .text = file_name,
-                .style = config.styles.file_name,
-            }}, .{});
-        }
-    }
+    const entry = lbl: {
+        const entry = directories.getSelected() catch return file_name_bar;
+        if (entry) |e| break :lbl e else return file_name_bar;
+    };
+
+    const file_name = try std.fmt.bufPrint(&self.file_name_buf, "[{s}]", .{entry.name});
+    _ = file_name_bar.printSegment(.{ .text = file_name, .style = config.styles.file_name }, .{});
 
     return file_name_bar;
 }
@@ -104,7 +97,7 @@ fn drawFilePreview(
     app: *App,
     win: vaxis.Window,
     file_name_win: vaxis.Window,
-) !void {
+) error{ OutOfMemory, NoSpaceLeft }!void {
     const bottom_div: u16 = 1;
 
     const preview_win = win.child(.{
@@ -126,27 +119,43 @@ fn drawFilePreview(
     self.current_item_path = try std.fmt.bufPrint(
         &self.current_item_path_buf,
         "{s}/{s}",
-        .{ try app.directories.fullPath("."), entry.name },
+        .{ app.directories.fullPath(".") catch {
+            const message = try std.fmt.allocPrint(app.alloc, "Can not display file - unable to retrieve directory path.", .{});
+            defer app.alloc.free(message);
+            app.notification.write(message, .err) catch {};
+            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+
+            _ = preview_win.print(&.{
+                .{ .text = "Can not display file - unable to retrieve directory path. No preview available." },
+            }, .{});
+            return;
+        }, entry.name },
     );
 
     switch (entry.kind) {
         .directory => {
             app.directories.clearChildEntries();
-            if (app.directories.populateChildEntries(entry.name)) {
-                for (app.directories.child_entries.all(), 0..) |item, i| {
-                    if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
-                        continue;
-                    }
-                    if (i > preview_win.height) continue;
-                    const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
-                    w.fill(vaxis.Cell{ .style = config.styles.list_item });
-                    _ = w.print(&.{.{ .text = item, .style = config.styles.list_item }}, .{});
+            app.directories.populateChildEntries(entry.name) catch |err| {
+                const message = try std.fmt.allocPrint(app.alloc, "Failed to populate child directory entries - {}.", .{err});
+                defer app.alloc.free(message);
+                app.notification.write(message, .err) catch {};
+                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+
+                _ = preview_win.print(&.{
+                    .{ .text = "Failed to populate child directory entries. No preview available." },
+                }, .{});
+
+                return;
+            };
+
+            for (app.directories.child_entries.all(), 0..) |item, i| {
+                if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
+                    continue;
                 }
-            } else |err| {
-                switch (err) {
-                    error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                    else => try app.notification.writeErr(.UnknownError),
-                }
+                if (i > preview_win.height) continue;
+                const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
+                w.fill(vaxis.Cell{ .style = config.styles.list_item });
+                _ = w.print(&.{.{ .text = item, .style = config.styles.list_item }}, .{});
             }
         },
         .file => file: {
@@ -154,32 +163,37 @@ fn drawFilePreview(
                 entry.name,
                 .{ .mode = .read_only },
             ) catch |err| {
-                switch (err) {
-                    error.AccessDenied => try app.notification.writeErr(.PermissionDenied),
-                    else => try app.notification.writeErr(.UnknownError),
-                }
+                const message = try std.fmt.allocPrint(app.alloc, "Failed to open file - {}.", .{err});
+                defer app.alloc.free(message);
+                app.notification.write(message, .err) catch {};
+                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
 
                 _ = preview_win.print(&.{
-                    .{ .text = "No preview available." },
+                    .{ .text = "Failed to open file. No preview available." },
                 }, .{});
 
                 break :file;
             };
             defer file.close();
-            const bytes = try file.readAll(&app.directories.file_contents);
+            const bytes = file.readAll(&app.directories.file_contents) catch |err| {
+                const message = try std.fmt.allocPrint(app.alloc, "Failed to read file contents - {}.", .{err});
+                defer app.alloc.free(message);
+                app.notification.write(message, .err) catch {};
+                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+
+                _ = preview_win.print(&.{
+                    .{ .text = "Failed to read file contents. No preview available." },
+                }, .{});
+
+                break :file;
+            };
 
             // Handle image.
             if (config.show_images == true) unsupported: {
                 var match = false;
                 inline for (@typeInfo(vaxis.zigimg.Image.Format).@"enum".fields) |field| {
-                    const entry_ext = std.mem.trimLeft(
-                        u8,
-                        std.fs.path.extension(entry.name),
-                        ".",
-                    );
-                    if (std.mem.eql(u8, entry_ext, field.name)) {
-                        match = true;
-                    }
+                    const entry_ext = std.mem.trimLeft(u8, std.fs.path.extension(entry.name), ".");
+                    if (std.mem.eql(u8, entry_ext, field.name)) match = true;
                 }
                 if (!match) break :unsupported;
 
@@ -204,7 +218,18 @@ fn drawFilePreview(
                 }
 
                 if (app.image) |img| {
-                    try img.draw(preview_win, .{ .scale = .contain });
+                    img.draw(preview_win, .{ .scale = .contain }) catch |err| {
+                        const message = try std.fmt.allocPrint(app.alloc, "Failed to draw image to screen - {}.", .{err});
+                        defer app.alloc.free(message);
+                        app.notification.write(message, .err) catch {};
+                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+
+                        _ = preview_win.print(&.{
+                            .{ .text = "Failed to draw image to screen. No preview available." },
+                        }, .{});
+
+                        break :file;
+                    };
                 }
 
                 break :file;
@@ -273,7 +298,7 @@ fn drawFileInfo(
     alloc: std.mem.Allocator,
     directories: *Directories,
     win: vaxis.Window,
-) !vaxis.Window {
+) error{NoSpaceLeft}!vaxis.Window {
     const bottom_div: u16 = if (self.verbose) 6 else 1;
 
     const file_info_win = win.child(.{
@@ -306,31 +331,31 @@ fn drawFileInfo(
     if (self.verbose) lbl: {
         var maybe_meta: ?std.fs.File.Metadata = null;
         if (entry.kind == .directory) {
-            maybe_meta = try directories.dir.metadata();
+            maybe_meta = directories.dir.metadata() catch break :lbl;
         } else if (entry.kind == .file) {
-            var file = try directories.dir.openFile(entry.name, .{});
-            maybe_meta = try file.metadata();
+            var file = directories.dir.openFile(entry.name, .{}) catch break :lbl;
+            maybe_meta = file.metadata() catch break :lbl;
         }
 
         const meta = maybe_meta orelse break :lbl;
-        var env = try std.process.getEnvMap(alloc);
+        var env = std.process.getEnvMap(alloc) catch break :lbl;
         defer env.deinit();
-        const local = try zeit.local(alloc, &env);
+        const local = zeit.local(alloc, &env) catch break :lbl;
         defer local.deinit();
 
-        const ctime_instant = try zeit.instant(.{
+        const ctime_instant = zeit.instant(.{
             .source = .{ .unix_nano = meta.created().? },
             .timezone = &local,
-        });
+        }) catch break :lbl;
         const ctime = ctime_instant.time();
-        try ctime.strftime(fbs.writer().any(), "Created: %Y-%m-%d %H:%M:%S\n");
+        ctime.strftime(fbs.writer().any(), "Created: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
 
-        const mtime_instant = try zeit.instant(.{
+        const mtime_instant = zeit.instant(.{
             .source = .{ .unix_nano = meta.modified() },
             .timezone = &local,
-        });
+        }) catch break :lbl;
         const mtime = mtime_instant.time();
-        try mtime.strftime(fbs.writer().any(), "Last modified: %Y-%m-%d %H:%M:%S\n");
+        mtime.strftime(fbs.writer().any(), "Last modified: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
     }
 
     // File permissions.
@@ -427,7 +452,7 @@ fn drawDirList(
     list: List(std.fs.Dir.Entry),
     abs_file_path: vaxis.Window,
     file_information: vaxis.Window,
-) !u16 {
+) u16 {
     const bottom_div: u16 = 1;
 
     const current_dir_list_win = win.child(.{
@@ -470,10 +495,9 @@ fn drawDirList(
 
 fn drawAbsFilePath(
     self: *Drawer,
-    alloc: std.mem.Allocator,
-    directories: *Directories,
+    app: *App,
     win: vaxis.Window,
-) !vaxis.Window {
+) error{ OutOfMemory, NoSpaceLeft }!vaxis.Window {
     const abs_file_path_bar = win.child(.{
         .x_off = 0,
         .y_off = 0,
@@ -481,8 +505,8 @@ fn drawAbsFilePath(
         .height = top_div,
     });
 
-    const branch_alloc = try Git.getGitBranch(alloc, directories.dir);
-    defer if (branch_alloc) |b| alloc.free(b);
+    const branch_alloc = Git.getGitBranch(app.alloc, app.directories.dir) catch null;
+    defer if (branch_alloc) |b| app.alloc.free(b);
     const branch = if (branch_alloc) |b|
         try std.fmt.bufPrint(
             &self.git_branch,
@@ -493,7 +517,13 @@ fn drawAbsFilePath(
         "";
 
     _ = abs_file_path_bar.print(&.{
-        vaxis.Segment{ .text = try directories.fullPath(".") },
+        vaxis.Segment{ .text = app.directories.fullPath(".") catch {
+            const message = try std.fmt.allocPrint(app.alloc, "Can not display absolute file path - unable to retrieve full path.", .{});
+            defer app.alloc.free(message);
+            app.notification.write(message, .err) catch {};
+            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+            return abs_file_path_bar;
+        } },
         vaxis.Segment{ .text = if (branch_alloc != null) " on " else "" },
         vaxis.Segment{ .text = branch, .style = config.styles.git_branch },
     }, .{});
@@ -506,7 +536,7 @@ fn drawUserInput(
     text_input: *vaxis.widgets.TextInput,
     input: []const u8,
     win: vaxis.Window,
-) !void {
+) void {
     const user_input_win = win.child(.{
         .x_off = 0,
         .y_off = top_div,
@@ -540,8 +570,9 @@ fn drawUserInput(
 
 fn drawNotification(
     notification: *Notification,
+    file_logger: *?FileLogger,
     win: vaxis.Window,
-) !void {
+) void {
     if (notification.len() == 0) return;
     if (notification.clearIfEnded()) return;
 
@@ -552,7 +583,10 @@ fn drawNotification(
     const max_width = win.width / 4;
     const width = notification.len() + width_padding;
     const calculated_width = if (width > max_width) max_width else width;
-    const height = try std.math.divCeil(usize, notification.len(), calculated_width) + height_padding;
+    const height = (std.math.divCeil(usize, notification.len(), calculated_width) catch {
+        if (file_logger.*) |fl| fl.write("Unable to display notification - failed to calculate notification height.", .err) catch {};
+        return;
+    }) + height_padding;
 
     const notification_win = win.child(.{
         .x_off = @intCast(win.width - (calculated_width + screen_pos_padding)),
