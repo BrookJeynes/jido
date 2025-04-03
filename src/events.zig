@@ -169,7 +169,7 @@ pub fn yank(app: *App) error{OutOfMemory}!void {
 
     app.yanked = lbl: {
         const entry = (app.directories.getSelected() catch {
-            app.notification.write("Failed to yank item - no item selected.", .warn) catch {};
+            app.notification.write("Can not yank item - no item selected.", .warn) catch {};
             break :lbl null;
         }) orelse break :lbl null;
 
@@ -193,7 +193,7 @@ pub fn yank(app: *App) error{OutOfMemory}!void {
                 };
             },
             else => {
-                message = try std.fmt.allocPrint(app.alloc, "Failed to yank '{s}' - unsupported file type '{s}'.", .{ entry.name, @tagName(entry.kind) });
+                message = try std.fmt.allocPrint(app.alloc, "Can not yank '{s}' - unsupported file type '{s}'.", .{ entry.name, @tagName(entry.kind) });
                 app.notification.write(message.?, .warn) catch {};
                 break :lbl null;
             },
@@ -274,7 +274,7 @@ pub fn paste(app: *App) error{OutOfMemory}!void {
             app.notification.write(message.?, .info) catch {};
         },
         else => {
-            message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unsupported file type '{s}'.", .{ yanked.entry.name, @tagName(yanked.entry.kind) });
+            message = try std.fmt.allocPrint(app.alloc, "Can not copy '{s}' - unsupported file type '{s}'.", .{ yanked.entry.name, @tagName(yanked.entry.kind) });
             app.notification.write(message.?, .warn) catch {};
             return;
         },
