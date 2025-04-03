@@ -66,7 +66,7 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         app.alloc.free(tmp_path);
 
         message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - {}.", .{ entry.name, err });
-        app.notification.write(message.?, .info) catch {};
+        app.notification.write(message.?, .err) catch {};
     }
 }
 
@@ -128,7 +128,7 @@ pub fn forceDelete(app: *App) error{OutOfMemory}!void {
 
     app.directories.dir.deleteTree(entry.name) catch |err| {
         const error_message = try std.fmt.allocPrint(app.alloc, "Failed to force delete '{s}' - {}.", .{ entry.name, err });
-        app.notification.write(error_message, .info) catch {};
+        app.notification.write(error_message, .err) catch {};
         return;
     };
 
@@ -474,7 +474,7 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
 
             app.directories.dir.deleteTree(path) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - {}.", .{ path, err });
-                app.notification.write(message.?, .info) catch {};
+                app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
