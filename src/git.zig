@@ -7,11 +7,9 @@ pub fn getGitBranch(alloc: std.mem.Allocator, dir: std.fs.Dir) !?[]const u8 {
 
     var buf: [1024]u8 = undefined;
     const bytes = try file.readAll(&buf);
+    if (bytes == 0) return null;
 
-    // TODO(2025-04-01): This won't work for branches with / in their name.
-    var it = std.mem.splitBackwardsSequence(u8, buf[0..bytes], "/");
-    const branch = it.next() orelse return null;
-    if (std.mem.eql(u8, branch, "")) return null;
+    const preamble = "ref: refs/heads/";
 
-    return try alloc.dupe(u8, branch);
+    return try alloc.dupe(u8, buf[preamble.len..]);
 }
