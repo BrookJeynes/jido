@@ -18,8 +18,6 @@ const Config = struct {
     preview_file: bool = true,
     empty_trash_on_exit: bool = false,
     true_dir_size: bool = false,
-    // TODO(10-01-25): This needs to be implemented.
-    // command_history_len: usize = 10,
     styles: Styles = .{},
     keybinds: Keybinds = .{},
 

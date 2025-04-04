@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.9.8 (2025-04-04)
+- fix: Ensure complete Git branch is displayed.
+- refactor: Audit try usage to improve system resiliance.
+- refactor: Removed need for enum based notifications.
+
 ## v0.9.7 (2025-04-01)
 - feat: Added ability to copy folders.
   This is done by (y)anking the file, then (p)asting in the desired directory.
