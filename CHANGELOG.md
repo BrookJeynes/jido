@@ -1,7 +1,7 @@
 # Changelog
 
 ## v0.9.8 (2025-04-04)
-- fix: Ensure complete branch is displayed.
+- fix: Ensure complete Git branch is displayed.
 - refactor: Audit try usage to improve system resiliance.
 - refactor: Removed need for enum based notifications.
 
