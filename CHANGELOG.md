@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.0.0 (2025-04-06)
+- New Keybinds:
+    - Added ability to copy files.
+      This is done by (y)anking the file, then (p)asting in the desired directory.
+      This action can be (u)ndone and behind the scenes is a deletion.
+      Currently this feature only supports files, folders, and symlinks.
+    - Added force delete keybind. It's unbound by default.
+    - Added keybind `v` to view additional information about the selected entry.
+- A huge audit of `try` usages was conducted. As a result of this, Jido is much
+  more resiliant to errors and should crash less often in known cases.
+- Added `:h` command to view help / keybind menu.
+- Added config option `true_dir_size` to see the true size of directories.
+- Added [-v | --version] and [-h | --help] args.
+- File permissions are now displayed in the file information bar to the bottom
+  of Jido.
+- Keybinds can now be unbound. Some keybinds are now unbound by default.
+  See [Configuration](https://github.com/BrookJeynes/jido?tab=readme-ov-file#configuration)
+  for more information.
+- Fixes:
+    - fix: Scrolling command history now provides the correct values.
+    - fix: Ensure complete Git branch is displayed. Previously if the branch
+      contained slashes, it would only retrieve the ending split.
+    - fix: Allow the cursor to be moved left and right on text input.
+    - fix: The keybind " " (spacebar) is now accepted by the config.
+    - fix: Multi-char keybinds now throw errors instead of crashing.
+    - fix: Undoing a delete/rename wont overwrite an item with the same name now.
+
 ## v0.9.9 (2025-04-06)
 - feat: Added ability to copy folders.
 - fix: Scrolling command history now provides the correct values.
