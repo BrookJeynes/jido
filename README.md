@@ -1,9 +1,6 @@
 # 地圖 (Jido)
 
-![Jido preview](./assets/preview.png)
-
-> **Note:** Previously known as **zfe**, this project has been renamed to 
-**Jido** to better reflect its purpose and functionality.
+![Jido preview](./assets/preview.gif)
 
 **Jido** is a lightweight Unix TUI file explorer designed for speed and 
 simplicity.
