@@ -8,9 +8,9 @@ Key:
 ## v1.0 release
 
 ### New features
-- [ ] File/Folder movement.
+- [x] File/Folder movement.
     - [x] Copy files.
-    - [ ] Copy folders.
+    - [x] Copy folders.
 - [ ] Keybind to unzip archives.
 - [x] Keybind to hard delete items (bypass trash).
 - [x] Ability to unbind keys.

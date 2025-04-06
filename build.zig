@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 ///Must match the `version` in `build.zig.zon`.
-const version = std.SemanticVersion{ .major = 0, .minor = 9, .patch = 8 };
+const version = std.SemanticVersion{ .major = 0, .minor = 9, .patch = 9 };
 
 const targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
