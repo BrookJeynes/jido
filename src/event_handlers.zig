@@ -104,7 +104,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                             try app.repopulateDirectory("");
                             app.text_input.clearAndFree();
                         },
-                        .command => app.command_history.resetSelected(),
+                        .command => app.command_history.cursor = null,
                         else => {},
                     }
 
@@ -127,9 +127,11 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
 
                             // Push command to history if it's not empty.
                             if (!std.mem.eql(u8, std.mem.trim(u8, command, " "), ":")) {
-                                if (app.command_history.push(try app.alloc.dupe(u8, command))) |deleted| {
-                                    app.alloc.free(deleted);
-                                }
+                                app.command_history.add(command, app.alloc) catch |err| {
+                                    const message = try std.fmt.allocPrint(app.alloc, "Failed to add command to history - {}.", .{err});
+                                    defer app.alloc.free(message);
+                                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                                };
                             }
 
                             supported: {
@@ -167,7 +169,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                                 try app.text_input.insertSliceAtCursor(":UnsupportedCommand");
                             }
 
-                            app.command_history.resetSelected();
+                            app.command_history.cursor = null;
                         },
                         else => {},
                     }
@@ -179,7 +181,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                 Key.right => app.text_input.cursorRight(),
                 Key.up => {
                     if (app.state == .command) {
-                        if (app.command_history.next()) |command| {
+                        if (app.command_history.previous()) |command| {
                             app.text_input.clearAndFree();
                             app.text_input.insertSliceAtCursor(command) catch |err| {
                                 const message = try std.fmt.allocPrint(app.alloc, "Failed to get previous command history - {}.", .{err});
@@ -193,7 +195,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                 Key.down => {
                     if (app.state == .command) {
                         app.text_input.clearAndFree();
-                        if (app.command_history.previous()) |command| {
+                        if (app.command_history.next()) |command| {
                             app.text_input.insertSliceAtCursor(command) catch |err| {
                                 const message = try std.fmt.allocPrint(app.alloc, "Failed to get next command history - {}.", .{err});
                                 defer app.alloc.free(message);

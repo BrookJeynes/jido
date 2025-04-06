@@ -149,10 +149,7 @@ pub fn deinit(self: *App) void {
         self.alloc.free(yanked.entry.name);
     }
 
-    self.command_history.resetSelected();
-    while (self.command_history.next()) |command| {
-        self.alloc.free(command);
-    }
+    self.command_history.deinit(self.alloc);
 
     self.help_menu.deinit();
     self.directories.deinit();

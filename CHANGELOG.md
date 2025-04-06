@@ -2,6 +2,7 @@
 
 ## v0.9.9 (2025-04-06)
 - feat: Added ability to copy folders.
+- fix: Scrolling command history now provides the correct values.
 
 ## v0.9.8 (2025-04-04)
 - fix: Ensure complete Git branch is displayed.

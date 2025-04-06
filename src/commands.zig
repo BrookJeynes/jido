@@ -6,41 +6,61 @@ const user_config = &@import("./config.zig").config;
 pub const CommandHistory = struct {
     const history_len = 10;
 
-    selected: usize = 0,
-    len: usize = 0,
     history: [history_len][]const u8 = undefined,
+    count: usize = 0,
+    ///Points to the oldest entry.
+    start: usize = 0,
+    cursor: ?usize = null,
 
-    pub fn push(self: *CommandHistory, command: []const u8) ?[]const u8 {
-        var deleted: ?[]const u8 = null;
-        if (self.len == history_len) {
-            deleted = self.history[0];
-            for (0..self.len - 1) |i| {
-                self.history[i] = self.history[i + 1];
-            }
-        } else {
-            self.len += 1;
+    pub fn deinit(self: *CommandHistory, allocator: std.mem.Allocator) void {
+        for (self.history[0..self.count]) |entry| {
+            allocator.free(entry);
         }
-
-        self.history[self.len - 1] = command;
-        self.selected = self.len;
-
-        return deleted;
     }
 
-    pub fn next(self: *CommandHistory) ?[]const u8 {
-        if (self.selected == 0) return null;
-        self.selected -= 1;
-        return self.history[self.selected];
+    pub fn add(self: *CommandHistory, cmd: []const u8, allocator: std.mem.Allocator) error{OutOfMemory}!void {
+        const index = (self.start + self.count) % history_len;
+
+        if (self.count < history_len) {
+            self.count += 1;
+        } else {
+            // Overwriting the oldest entry.
+            allocator.free(self.history[self.start]);
+            self.start = (self.start + 1) % history_len;
+        }
+
+        self.history[index] = try allocator.dupe(u8, cmd);
+        self.cursor = null;
     }
 
     pub fn previous(self: *CommandHistory) ?[]const u8 {
-        if (self.selected + 1 == self.len) return null;
-        self.selected += 1;
-        return self.history[self.selected];
+        if (self.count == 0) return null;
+
+        if (self.cursor == null) {
+            self.cursor = self.count - 1;
+        } else if (self.cursor.? > 0) {
+            self.cursor.? -= 1;
+        }
+
+        return self.getAtCursor();
     }
 
-    pub fn resetSelected(self: *CommandHistory) void {
-        self.selected = self.len;
+    pub fn next(self: *CommandHistory) ?[]const u8 {
+        if (self.count == 0 or self.cursor == null) return null;
+
+        if (self.cursor.? < self.count - 1) {
+            self.cursor.? += 1;
+            return self.getAtCursor();
+        }
+
+        self.cursor = null;
+        return null;
+    }
+
+    fn getAtCursor(self: *CommandHistory) ?[]const u8 {
+        if (self.cursor == null) return null;
+        const index = (self.start + self.cursor.?) % history_len;
+        return self.history[index];
     }
 };
 
