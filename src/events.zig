@@ -288,7 +288,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
                         };
                     },
                     else => {
-                        message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unsupported file type '{}'.", .{ entry.path, entry.kind });
+                        message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unsupported file type '{s}'.", .{ entry.path, @tagName(entry.kind) });
                         app.notification.write(message.?, .err) catch {};
                         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                         errored = true;

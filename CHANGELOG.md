@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.0.1 (2025-04-14)
+- fix(errors): Ensure logged enums are wrapped in `@tagName()` for readability.
+
 ## v1.0.0 (2025-04-06)
 - New Keybinds:
     - Added ability to copy files.
