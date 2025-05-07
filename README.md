@@ -166,5 +166,6 @@ Char = enum(u21)
 ```
 
 ## Contributing
-Contributions, issues, and feature requests are always welcome via GitHub or
+Contributions, issues, and feature requests are always welcome via
+[GitHub](https://github.com/brookjeynes/jido) or
 [tangled](https://tangled.sh/@brookjeynes.dev/jido).
