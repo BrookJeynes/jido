@@ -10,6 +10,8 @@ purpose: helping you navigate and explore your file system with ease. With
 Vim-like bindings and a minimalist interface, Jido focuses on speed and
 simplicity.
 
+Jido used Zig `0.14.0`.
+
 - [Installation](#installation)
 - [Integrations](#integrations)
 - [Key manual](#key-manual)
@@ -164,5 +166,5 @@ Char = enum(u21)
 ```
 
 ## Contributing
-Contributions, issues, and feature requests are always welcome! This project is
-currently using the latest stable release of Zig (0.14.0).
+Contributions, issues, and feature requests are always welcome via GitHub or
+[tangled](https://tangled.sh/@brookjeynes.dev/jido).
