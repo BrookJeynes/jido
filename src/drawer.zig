@@ -222,14 +222,13 @@ fn drawFilePreview(
                         break :file;
                     }
 
-                    if (app.image.path) |p| app.alloc.free(p);
-                    app.image.path = try app.alloc.dupe(u8, self.current_item_path);
+                    const path = try app.alloc.dupe(u8, self.current_item_path);
+                    const load_img_thread = std.Thread.spawn(.{}, loadImage, .{
+                        app,
+                        path,
+                    }) catch break :unsupported;
+                    load_img_thread.detach();
                 }
-
-                const load_img_thread = std.Thread.spawn(.{}, loadImage, .{
-                    app,
-                }) catch break :unsupported;
-                load_img_thread.detach();
 
                 break :file;
             }
@@ -606,20 +605,21 @@ fn drawNotification(
     }, .{ .wrap = .word });
 }
 
-fn loadImage(app: *App) error{ Unsupported, OutOfMemory }!void {
-    defer app.image.mutex.unlock();
+fn loadImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!void {
+    const image = vaxis.zigimg.Image.fromFilePath(app.alloc, path) catch {
+        return error.Unsupported;
+    };
 
     app.image.mutex.lock();
     if (app.image.data) |data| {
         var img_data = data;
         img_data.deinit();
     }
-    app.image.data = vaxis.zigimg.Image.fromFilePath(
-        app.alloc,
-        app.image.path orelse return error.Unsupported,
-    ) catch {
-        return error.Unsupported;
-    };
+    app.image.data = image;
+
+    if (app.image.path) |p| app.alloc.free(p);
+    app.image.path = path;
+    app.image.mutex.unlock();
 
     app.loop.postEvent(.image_ready);
 }
