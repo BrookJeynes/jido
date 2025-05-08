@@ -12,7 +12,6 @@ const events = @import("./events.zig");
 pub fn handleNormalEvent(
     app: *App,
     event: App.Event,
-    loop: *vaxis.Loop(App.Event),
 ) !void {
     switch (event) {
         .key_press => |key| {
@@ -82,7 +81,7 @@ pub fn handleNormalEvent(
             } else {
                 switch (key.codepoint) {
                     '-', 'h', Key.left => try events.traverseLeft(app),
-                    Key.enter, 'l', Key.right => try events.traverseRight(app, loop),
+                    Key.enter, 'l', Key.right => try events.traverseRight(app),
                     'j', Key.down => app.directories.entries.next(),
                     'k', Key.up => app.directories.entries.previous(),
                     'u' => try events.undo(app),
@@ -90,6 +89,7 @@ pub fn handleNormalEvent(
                 }
             }
         },
+        .image_ready => {},
         .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
     }
 }
@@ -239,6 +239,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                 },
             }
         },
+        .image_ready => {},
         .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
     }
 }
@@ -253,6 +254,7 @@ pub fn handleHelpMenuEvent(app: *App, event: App.Event) !void {
                 else => {},
             }
         },
+        .image_ready => {},
         .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
     }
 }

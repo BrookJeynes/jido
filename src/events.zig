@@ -391,7 +391,7 @@ pub fn traverseLeft(app: *App) error{OutOfMemory}!void {
     }
 }
 
-pub fn traverseRight(app: *App, loop: *vaxis.Loop(App.Event)) !void {
+pub fn traverseRight(app: *App) !void {
     var message: ?[]const u8 = null;
     defer if (message) |msg| app.alloc.free(msg);
 
@@ -421,7 +421,7 @@ pub fn traverseRight(app: *App, loop: *vaxis.Loop(App.Event)) !void {
             if (environment.getEditor()) |editor| {
                 try app.vx.exitAltScreen(app.tty.anyWriter());
                 try app.vx.resetState(app.tty.anyWriter());
-                loop.stop();
+                app.loop.stop();
 
                 environment.openFile(app.alloc, app.directories.dir, entry.name, editor) catch |err| {
                     message = try std.fmt.allocPrint(app.alloc, "Failed to open file '{s}' - {}.", .{ entry.name, err });
@@ -429,7 +429,7 @@ pub fn traverseRight(app: *App, loop: *vaxis.Loop(App.Event)) !void {
                     if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 };
 
-                try loop.start();
+                try app.loop.start();
                 try app.vx.enterAltScreen(app.tty.anyWriter());
                 try app.vx.enableDetectedFeatures(app.tty.anyWriter());
                 app.vx.queueRefresh();
