@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.0 (2025-05-21)
+- fix(images): Improve performance by only locking critical parts of image loading
+- fix(images): Thread the image loading process as not to block user input
+
 ## v1.0.1 (2025-04-14)
 - fix(errors): Ensure logged enums are wrapped in `@tagName()` for readability.
 

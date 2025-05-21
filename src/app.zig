@@ -73,6 +73,7 @@ pub const Action = union(enum) {
 };
 
 pub const Event = union(enum) {
+    image_ready,
     key_press: Key,
     winsize: vaxis.Winsize,
 };
@@ -85,6 +86,7 @@ alloc: std.mem.Allocator,
 should_quit: bool,
 vx: vaxis.Vaxis = undefined,
 tty: vaxis.Tty = undefined,
+loop: vaxis.Loop(Event) = undefined,
 state: State = .normal,
 actions: CircStack(Action, actions_len),
 command_history: CommandHistory = CommandHistory{},
@@ -99,8 +101,13 @@ text_input: vaxis.widgets.TextInput,
 text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 
 yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
-image: ?vaxis.Image = null,
 last_known_height: usize,
+
+image: struct {
+    mutex: std.Thread.Mutex = .{},
+    data: ?vaxis.zigimg.Image = null,
+    path: ?[]const u8 = null,
+} = .{},
 
 pub fn init(alloc: std.mem.Allocator) !App {
     var vx = try vaxis.init(alloc, .{
@@ -116,7 +123,7 @@ pub fn init(alloc: std.mem.Allocator) !App {
     var help_menu = List([]const u8).init(alloc);
     try help_menu.fromArray(&help_menu_items);
 
-    return App{
+    var app: App = .{
         .alloc = alloc,
         .should_quit = false,
         .vx = vx,
@@ -127,6 +134,13 @@ pub fn init(alloc: std.mem.Allocator) !App {
         .actions = CircStack(Action, actions_len).init(),
         .last_known_height = vx.window().height,
     };
+
+    app.loop = vaxis.Loop(Event){
+        .vaxis = &app.vx,
+        .tty = &app.tty,
+    };
+
+    return app;
 }
 
 pub fn deinit(self: *App) void {
@@ -157,6 +171,11 @@ pub fn deinit(self: *App) void {
     self.vx.deinit(self.alloc, self.tty.anyWriter());
     self.tty.deinit();
     if (self.file_logger) |file_logger| file_logger.deinit();
+    if (self.image.path) |path| self.alloc.free(path);
+    if (self.image.data) |data| {
+        var img_data = data;
+        img_data.deinit();
+    }
 }
 
 pub fn inputToSlice(self: *App) []const u8 {
@@ -176,20 +195,16 @@ pub fn repopulateDirectory(self: *App, fuzzy: []const u8) error{OutOfMemory}!voi
 
 pub fn run(self: *App) !void {
     try self.repopulateDirectory("");
-
-    var loop: vaxis.Loop(Event) = .{
-        .vaxis = &self.vx,
-        .tty = &self.tty,
-    };
-    try loop.start();
-    defer loop.stop();
+    try self.loop.start();
+    defer self.loop.stop();
 
     try self.vx.enterAltScreen(self.tty.anyWriter());
     try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
+    self.vx.caps.kitty_graphics = true;
 
     while (!self.should_quit) {
-        loop.pollEvent();
-        while (loop.tryEvent()) |event| {
+        self.loop.pollEvent();
+        while (self.loop.tryEvent()) |event| {
             // Global keybinds.
             switch (event) {
                 .key_press => |key| {
@@ -232,7 +247,7 @@ pub fn run(self: *App) !void {
             // State specific keybinds.
             switch (self.state) {
                 .normal => {
-                    try EventHandlers.handleNormalEvent(self, event, &loop);
+                    try EventHandlers.handleNormalEvent(self, event);
                 },
                 .help_menu => {
                     try EventHandlers.handleHelpMenuEvent(self, event);
