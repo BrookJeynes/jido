@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.2.0 (2025-05-26)
+- feat(images): Cache images to avoid unecessary re-processing
+
 ## v1.1.0 (2025-05-21)
 - fix(images): Improve performance by only locking critical parts of image loading
 - fix(images): Thread the image loading process as not to block user input

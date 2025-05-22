@@ -78,7 +78,30 @@ pub const Event = union(enum) {
     winsize: vaxis.Winsize,
 };
 
+pub const Image = struct {
+    const Status = enum {
+        ready,
+        processing,
+    };
+
+    ///Only use on first transmission. Subsequent draws should use
+    ///`Image.image`.
+    data: ?vaxis.zigimg.Image = null,
+    image: ?vaxis.Image = null,
+    path: ?[]const u8 = null,
+    status: Status = .processing,
+
+    pub fn deinit(self: @This(), alloc: std.mem.Allocator) void {
+        if (self.data) |data| {
+            var d = data;
+            d.deinit();
+        }
+        if (self.path) |path| alloc.free(path);
+    }
+};
+
 const actions_len = 100;
+const image_cache_cap = 100;
 
 const App = @This();
 
@@ -103,11 +126,10 @@ text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
 last_known_height: usize,
 
-image: struct {
+images: struct {
     mutex: std.Thread.Mutex = .{},
-    data: ?vaxis.zigimg.Image = null,
-    path: ?[]const u8 = null,
-} = .{},
+    cache: std.StringHashMap(Image),
+},
 
 pub fn init(alloc: std.mem.Allocator) !App {
     var vx = try vaxis.init(alloc, .{
@@ -133,6 +155,7 @@ pub fn init(alloc: std.mem.Allocator) !App {
         .text_input = vaxis.widgets.TextInput.init(alloc, &vx.unicode),
         .actions = CircStack(Action, actions_len).init(),
         .last_known_height = vx.window().height,
+        .images = .{ .cache = .init(alloc) },
     };
 
     app.loop = vaxis.Loop(Event){
@@ -171,11 +194,12 @@ pub fn deinit(self: *App) void {
     self.vx.deinit(self.alloc, self.tty.anyWriter());
     self.tty.deinit();
     if (self.file_logger) |file_logger| file_logger.deinit();
-    if (self.image.path) |path| self.alloc.free(path);
-    if (self.image.data) |data| {
-        var img_data = data;
-        img_data.deinit();
+
+    var image_iter = self.images.cache.iterator();
+    while (image_iter.next()) |img| {
+        img.value_ptr.deinit(self.alloc);
     }
+    self.images.cache.deinit();
 }
 
 pub fn inputToSlice(self: *App) []const u8 {
