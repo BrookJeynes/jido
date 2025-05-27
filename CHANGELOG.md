@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.0 (2025-05-26)
+- feat: add `--choose-dir` arg
+- feat: add `--entry-dir=PATH` arg
+
 ## v1.2.0 (2025-05-26)
 - feat(images): Cache images to avoid unecessary re-processing
 
