@@ -230,43 +230,7 @@ pub fn run(self: *App) !void {
         self.loop.pollEvent();
         while (self.loop.tryEvent()) |event| {
             // Global keybinds.
-            switch (event) {
-                .key_press => |key| {
-                    if ((key.codepoint == 'c' and key.mods.ctrl)) {
-                        self.should_quit = true;
-                        return;
-                    }
-
-                    if ((key.codepoint == 'r' and key.mods.ctrl)) {
-                        if (config.parse(self.alloc, self)) {
-                            self.notification.write("Reloaded configuration file.", .info) catch {};
-                        } else |err| switch (err) {
-                            error.SyntaxError => {
-                                self.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
-                                    std.log.err("Encountered a syntax error while parsing the config file.", .{});
-                                };
-                            },
-                            error.InvalidCharacter => {
-                                self.notification.write("One or more overriden keybinds are invalid.", .err) catch {
-                                    std.log.err("One or more overriden keybinds are invalid.", .{});
-                                };
-                            },
-                            error.DuplicateKeybind => {
-                                // Error logged in function
-                            },
-                            else => {
-                                const message = try std.fmt.allocPrint(self.alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
-                                defer self.alloc.free(message);
-
-                                self.notification.write(message, .err) catch {
-                                    std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
-                                };
-                            },
-                        }
-                    }
-                },
-                else => {},
-            }
+            try EventHandlers.handleGlobalEvent(self, event);
 
             // State specific keybinds.
             switch (self.state) {

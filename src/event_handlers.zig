@@ -9,6 +9,49 @@ const commands = @import("./commands.zig");
 const Keybinds = @import("./config.zig").Keybinds;
 const events = @import("./events.zig");
 
+pub fn handleGlobalEvent(
+    app: *App,
+    event: App.Event,
+) error{OutOfMemory}!void {
+    switch (event) {
+        .key_press => |key| {
+            if ((key.codepoint == 'c' and key.mods.ctrl)) {
+                app.should_quit = true;
+                return;
+            }
+
+            if ((key.codepoint == 'r' and key.mods.ctrl)) {
+                if (config.parse(app.alloc, app)) {
+                    app.notification.write("Reloaded configuration file.", .info) catch {};
+                } else |err| switch (err) {
+                    error.SyntaxError => {
+                        app.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
+                            std.log.err("Encountered a syntax error while parsing the config file.", .{});
+                        };
+                    },
+                    error.InvalidCharacter => {
+                        app.notification.write("One or more overriden keybinds are invalid.", .err) catch {
+                            std.log.err("One or more overriden keybinds are invalid.", .{});
+                        };
+                    },
+                    error.DuplicateKeybind => {
+                        // Error logged in function
+                    },
+                    else => {
+                        const message = try std.fmt.allocPrint(app.alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
+                        defer app.alloc.free(message);
+
+                        app.notification.write(message, .err) catch {
+                            std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
+                        };
+                    },
+                }
+            }
+        },
+        else => {},
+    }
+}
+
 pub fn handleNormalEvent(
     app: *App,
     event: App.Event,
