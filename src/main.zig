@@ -5,6 +5,7 @@ const App = @import("app.zig");
 const FileLogger = @import("file_logger.zig");
 const vaxis = @import("vaxis");
 const config = &@import("./config.zig").config;
+const resolvePath = @import("./commands.zig").resolvePath;
 
 pub const panic = vaxis.panic_handler;
 
@@ -25,9 +26,12 @@ pub fn main() !void {
     }
     const alloc = gpa.allocator();
 
+    var entry_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var entry_dir_path: ?[]const u8 = null;
+
     var args = std.process.args();
     _ = args.skip();
-    if (args.next()) |arg| {
+    while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
             std.debug.print("jido v{}\n", .{options.version});
             return;
@@ -42,40 +46,64 @@ pub fn main() !void {
                 \\Flags:
                 \\  -h, --help                     Show help information and exit.
                 \\  -v, --version                  Print version information and exit.
+                \\      --entry-dir=PATH           Open jido at chosen dir. 
                 \\
             , .{});
             return;
         }
+
+        if (std.mem.startsWith(u8, arg, "--entry-dir")) {
+            var path: ?[]const u8 = null;
+            if (arg.len > 11 and arg[11] == '=') {
+                var iter = std.mem.tokenizeAny(u8, arg, "=");
+                _ = iter.next();
+                if (iter.next()) |p| path = p;
+            } else {
+                if (args.next()) |p| path = p;
+            }
+
+            if (path) |p| {
+                var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
+                defer dir.close();
+                entry_dir_path = resolvePath(&entry_buf, p, dir);
+            }
+        }
     }
 
-    var app = try App.init(alloc);
-    defer app.deinit();
+    {
+        var app = App.init(alloc, entry_dir_path) catch {
+            vaxis.recover();
+            std.posix.exit(1);
+        };
+        defer app.deinit();
 
-    config.parse(alloc, &app) catch |err| switch (err) {
-        error.SyntaxError => {
-            app.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
-                std.log.err("Encountered a syntax error while parsing the config file.", .{});
-            };
-        },
-        error.InvalidCharacter => {
-            app.notification.write("One or more overriden keybinds are invalid.", .err) catch {
-                std.log.err("One or more overriden keybinds are invalid.", .{});
-            };
-        },
-        error.DuplicateKeybind => {
-            // Error logged in function
-        },
-        else => {
-            const message = try std.fmt.allocPrint(alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
-            defer alloc.free(message);
+        config.parse(alloc, &app) catch |err| switch (err) {
+            error.SyntaxError => {
+                app.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
+                    std.log.err("Encountered a syntax error while parsing the config file.", .{});
+                };
+            },
+            error.InvalidCharacter => {
+                app.notification.write("One or more overriden keybinds are invalid.", .err) catch {
+                    std.log.err("One or more overriden keybinds are invalid.", .{});
+                };
+            },
+            error.DuplicateKeybind => {
+                // Error logged in function
+            },
+            else => {
+                const message = try std.fmt.allocPrint(alloc, "Encountend an unknown error while parsing the config file - {}", .{err});
+                defer alloc.free(message);
 
-            app.notification.write(message, .err) catch {
-                std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
-            };
-        },
-    };
+                app.notification.write(message, .err) catch {
+                    std.log.err("Encountend an unknown error while parsing the config file - {}", .{err});
+                };
+            },
+        };
 
-    app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else null;
+        app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else null;
 
-    try app.run();
+        try app.run();
+    }
+
 }

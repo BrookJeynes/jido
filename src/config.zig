@@ -18,6 +18,7 @@ const Config = struct {
     preview_file: bool = true,
     empty_trash_on_exit: bool = false,
     true_dir_size: bool = false,
+    entry_dir: ?[]const u8 = null,
     styles: Styles = .{},
     keybinds: Keybinds = .{},
 
