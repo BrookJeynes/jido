@@ -131,7 +131,7 @@ images: struct {
     cache: std.StringHashMap(Image),
 },
 
-pub fn init(alloc: std.mem.Allocator) !App {
+pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
     var vx = try vaxis.init(alloc, .{
         .kitty_keyboard_flags = .{
             .report_text = false,
@@ -150,7 +150,7 @@ pub fn init(alloc: std.mem.Allocator) !App {
         .should_quit = false,
         .vx = vx,
         .tty = try vaxis.Tty.init(),
-        .directories = try Directories.init(alloc),
+        .directories = try Directories.init(alloc, entry_dir),
         .help_menu = help_menu,
         .text_input = vaxis.widgets.TextInput.init(alloc, &vx.unicode),
         .actions = CircStack(Action, actions_len).init(),

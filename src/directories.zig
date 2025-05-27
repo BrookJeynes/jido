@@ -19,10 +19,24 @@ history: CircStack(usize, history_len),
 child_entries: List([]const u8),
 searcher: fuzzig.Ascii,
 
-pub fn init(alloc: std.mem.Allocator) !Self {
+pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !Self {
+    const dir_path = if (entry_dir) |dir| dir else ".";
+    const dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
+        switch (err) {
+            error.FileNotFound => {
+                std.log.err("path '{s}' could not be found.", .{dir_path});
+                return err;
+            },
+            else => {
+                std.log.err("{}", .{err});
+                return err;
+            },
+        }
+    };
+
     return Self{
         .alloc = alloc,
-        .dir = try std.fs.cwd().openDir(".", .{ .iterate = true }),
+        .dir = dir,
         .entries = List(std.fs.Dir.Entry).init(alloc),
         .history = CircStack(usize, history_len).init(),
         .child_entries = List([]const u8).init(alloc),
