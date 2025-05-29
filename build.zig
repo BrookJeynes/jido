@@ -18,10 +18,10 @@ fn createExe(
     optimize: std.builtin.OptimizeMode,
     build_options: *std.Build.Module,
 ) !*std.Build.Step.Compile {
-    const libvaxis = b.dependency("vaxis", .{ .target = target }).module("vaxis");
-    const fuzzig = b.dependency("fuzzig", .{ .target = target }).module("fuzzig");
-    const zuid = b.dependency("zuid", .{ .target = target }).module("zuid");
-    const zeit = b.dependency("zeit", .{ .target = target }).module("zeit");
+    const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
+    const fuzzig = b.dependency("fuzzig", .{ .target = target, .optimize = optimize }).module("fuzzig");
+    const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
+    const zeit = b.dependency("zeit", .{ .target = target, .optimize = optimize }).module("zeit");
 
     const exe = b.addExecutable(.{
         .name = exe_name,
