@@ -20,21 +20,23 @@ fn createExe(
 ) !*std.Build.Step.Compile {
     const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
     const fuzzig = b.dependency("fuzzig", .{ .target = target, .optimize = optimize }).module("fuzzig");
-    const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
     const zeit = b.dependency("zeit", .{ .target = target, .optimize = optimize }).module("zeit");
+    const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
 
     const exe = b.addExecutable(.{
         .name = exe_name,
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     exe.root_module.addImport("options", build_options);
     exe.root_module.addImport("vaxis", libvaxis);
     exe.root_module.addImport("fuzzig", fuzzig);
-    exe.root_module.addImport("zuid", zuid);
     exe.root_module.addImport("zeit", zeit);
+    exe.root_module.addImport("zuid", zuid);
 
     return exe;
 }

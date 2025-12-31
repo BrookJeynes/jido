@@ -38,7 +38,7 @@ pub fn checkDuplicatePath(
         const extension = std.fs.path.extension(relative_path);
         break :lbl try std.fmt.bufPrint(
             buf,
-            "{s}-{s}{s}",
+            "{s}-{f}{s}",
             .{ relative_path[0 .. relative_path.len - extension.len], zuid.new.v4(), extension },
         );
     } else lbl: {
