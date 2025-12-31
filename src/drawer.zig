@@ -224,10 +224,11 @@ fn drawFilePreview(
                     } else {
                         if (cache_entry.data == null) {
                             const path = try app.alloc.dupe(u8, self.current_item_path);
-                            processImage(app, path) catch break :unsupported;
+                            var buffer: [1024]u8 = undefined;
+                            processImage(app, path, &buffer) catch break :unsupported;
                         }
 
-                        if (app.vx.transmitImage(app.alloc, app.tty.anyWriter(), &cache_entry.data.?, .rgba)) |img| {
+                        if (app.vx.transmitImage(app.alloc, app.tty.writer(), &cache_entry.data.?, .rgba)) |img| {
                             img.draw(preview_win, .{ .scale = .contain }) catch |err| {
                                 const message = try std.fmt.allocPrint(app.alloc, "Failed to draw image to screen - {}.", .{err});
                                 defer app.alloc.free(message);
@@ -240,7 +241,7 @@ fn drawFilePreview(
                                 break :file;
                             };
                             cache_entry.image = img;
-                            cache_entry.data.?.deinit();
+                            cache_entry.data.?.deinit(app.alloc);
                             cache_entry.data = null;
                         } else |_| {
                             break :unsupported;
@@ -250,7 +251,8 @@ fn drawFilePreview(
                     break :file;
                 } else {
                     const path = try app.alloc.dupe(u8, self.current_item_path);
-                    processImage(app, path) catch break :unsupported;
+                    var buffer: [1024]u8 = undefined;
+                    processImage(app, path, &buffer) catch break :unsupported;
                 }
 
                 break :file;
@@ -350,12 +352,12 @@ fn drawFileInfo(
 
     // Time created / last modified
     if (self.verbose) lbl: {
-        var maybe_meta: ?std.fs.File.Metadata = null;
+        var maybe_meta: ?std.fs.File.Stat = null;
         if (entry.kind == .directory) {
-            maybe_meta = directories.dir.metadata() catch break :lbl;
+            maybe_meta = directories.dir.stat() catch break :lbl;
         } else if (entry.kind == .file) {
             var file = directories.dir.openFile(entry.name, .{}) catch break :lbl;
-            maybe_meta = file.metadata() catch break :lbl;
+            maybe_meta = file.stat() catch break :lbl;
         }
 
         const meta = maybe_meta orelse break :lbl;
@@ -365,14 +367,14 @@ fn drawFileInfo(
         defer local.deinit();
 
         const ctime_instant = zeit.instant(.{
-            .source = .{ .unix_nano = meta.created().? },
+            .source = .{ .unix_nano = meta.ctime },
             .timezone = &local,
         }) catch break :lbl;
         const ctime = ctime_instant.time();
         ctime.strftime(fbs.writer().any(), "Created: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
 
         const mtime_instant = zeit.instant(.{
-            .source = .{ .unix_nano = meta.modified() },
+            .source = .{ .unix_nano = meta.mtime },
             .timezone = &local,
         }) catch break :lbl;
         const mtime = mtime_instant.time();
@@ -441,9 +443,9 @@ fn drawFileInfo(
 
         break :lbl 0;
     };
-    if (size) |s| try fbs.writer().print("{s}{:.2}\n", .{
+    if (size) |s| try fbs.writer().print("{s}{B:.2}\n", .{
         if (self.verbose) "Size: " else "",
-        std.fmt.fmtIntSizeDec(s),
+        s,
     });
 
     // Extension.
@@ -628,7 +630,7 @@ fn drawNotification(
     }, .{ .wrap = .word });
 }
 
-fn processImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!void {
+fn processImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupported, OutOfMemory }!void {
     app.images.cache.put(path, .{ .path = path, .status = .processing }) catch {
         const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to add image to cache.", .{path});
         defer app.alloc.free(message);
@@ -640,12 +642,13 @@ fn processImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!v
     const load_img_thread = std.Thread.spawn(.{}, loadImage, .{
         app,
         path,
+        buffer,
     }) catch return error.Unsupported;
     load_img_thread.detach();
 }
 
-fn loadImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!void {
-    const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path) catch {
+fn loadImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupported, OutOfMemory }!void {
+    const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path, buffer) catch {
         const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to read image from path.", .{path});
         defer app.alloc.free(message);
         app.notification.write(message, .err) catch {};

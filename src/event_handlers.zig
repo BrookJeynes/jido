@@ -133,7 +133,7 @@ pub fn handleNormalEvent(
             }
         },
         .image_ready => {},
-        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
+        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.writer(), ws),
     }
 }
 
@@ -283,7 +283,7 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
             }
         },
         .image_ready => {},
-        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
+        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.writer(), ws),
     }
 }
 
@@ -298,6 +298,6 @@ pub fn handleHelpMenuEvent(app: *App, event: App.Event) !void {
             }
         },
         .image_ready => {},
-        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.anyWriter(), ws),
+        .winsize => |ws| try app.vx.resize(app.alloc, app.tty.writer(), ws),
     }
 }

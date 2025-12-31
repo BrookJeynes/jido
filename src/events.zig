@@ -419,8 +419,8 @@ pub fn traverseRight(app: *App) !void {
         },
         .file => {
             if (environment.getEditor()) |editor| {
-                try app.vx.exitAltScreen(app.tty.anyWriter());
-                try app.vx.resetState(app.tty.anyWriter());
+                try app.vx.exitAltScreen(app.tty.writer());
+                try app.vx.resetState(app.tty.writer());
                 app.loop.stop();
 
                 environment.openFile(app.alloc, app.directories.dir, entry.name, editor) catch |err| {
@@ -430,8 +430,8 @@ pub fn traverseRight(app: *App) !void {
                 };
 
                 try app.loop.start();
-                try app.vx.enterAltScreen(app.tty.anyWriter());
-                try app.vx.enableDetectedFeatures(app.tty.anyWriter());
+                try app.vx.enterAltScreen(app.tty.writer());
+                try app.vx.enableDetectedFeatures(app.tty.writer());
                 app.vx.queueRefresh();
             } else {
                 app.notification.write("Can not open file - $EDITOR not set.", .warn) catch {};

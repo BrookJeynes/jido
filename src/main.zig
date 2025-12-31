@@ -104,7 +104,7 @@ pub fn main() !void {
     }
 
     if (opts.version) {
-        std.debug.print("jido v{}\n", .{options.version});
+        std.debug.print("jido v{f}\n", .{options.version});
         return;
     }
 
@@ -151,8 +151,12 @@ pub fn main() !void {
     // Must be printed after app has deinit as part of that process clears
     // the screen.
     if (last_dir) |path| {
-        const stdout = std.io.getStdOut().writer();
+        var stdout_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        const stdout = &stdout_writer.interface;
         stdout.print("{s}\n", .{path}) catch {};
+        stdout.flush() catch {};
+
         alloc.free(path);
     }
 }
