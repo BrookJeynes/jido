@@ -49,7 +49,7 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         return;
     }
 
-    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{s}", .{ trash_dir_path, entry.name, zuid.new.v4() });
+    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{f}", .{ trash_dir_path, entry.name, zuid.new.v4() });
     if (app.directories.dir.rename(entry.name, tmp_path)) {
         if (app.actions.push(.{
             .delete = .{ .prev_path = prev_path_alloc, .new_path = tmp_path },

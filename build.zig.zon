@@ -6,20 +6,21 @@
 
     .dependencies = .{
         .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis#1e24e0dfb509e974e1c8713bcd119d0ae032a8c7",
-            .hash = "vaxis-0.1.0-BWNV_MHyCAARemSCSwwc3sA1etNgv7ge0BCIXspX6CZv",
+            .url = "git+https://github.com/rockorager/libvaxis.git#75035b169e91a51c233f3742161f8eb8eafca659",
+            .hash = "vaxis-0.5.1-BWNV_IE-CQBYmSf_boEKUyv6den0Gmj5LksxvdCx2pBL",
         },
         .fuzzig = .{
-            .url = "git+https://github.com/fjebaker/fuzzig#44c04733c7c0fee3db83672aaaaf4ed03e943156",
-            .hash = "fuzzig-0.1.1-AAAAALNIAQBmbHr-MPalGuR393Vem2pTQXI7_LXeNJgX",
-        },
-        .zuid = .{
-            .url = "git+https://github.com/KeithBrown39423/zuid#b6129f6cee45bd90b7ac97b8839dc28d21bedcb2",
-            .hash = "zuid-2.0.0-AAAAADxXAAA4MAzwwRhfZ9AC2FMPZ8hUrZbfpmJ_azpK",
+            .url = "git+https://github.com/fjebaker/fuzzig#4251fe4230d38e721514394a485db62ee1667ff3",
+            .hash = "fuzzig-0.1.1-Ji0xivxIAQBD0g8O_NV_0foqoPf3elsg9Sc3pNfdVH4D",
         },
         .zeit = .{
-            .url = "git+https://github.com/rockorager/zeit/#175cf91a641790799e9d676878a9fe814aaed134",
-            .hash = "zeit-0.6.0-5I6bk5daAgC-P60TjxRqW0bYknfCGxJp-03eS9UjGrO7",
+            .url = "git+https://github.com/rockorager/zeit#7ac64d72dbfb1a4ad549102e7d4e232a687d32d8",
+            .hash = "zeit-0.6.0-5I6bk36tAgATpSl9wjFmRPMqYN2Mn0JQHgIcRNcqDpJA",
+        },
+        // Replace with KeithBrown39423/zuid once https://github.com/KeithBrown39423/zuid/pull/4 is merged
+        .zuid = .{
+            .url = "https://github.com/BrookJeynes/zuid/archive/refs/heads/bj/2025-12-31/feat/0.15.1.tar.gz",
+            .hash = "zuid-3.0.0-l7aPyUlXAAAk9BLSDm2roA3i78Sy6_GvQI4hwe0PHI_m",
         },
     },
 
