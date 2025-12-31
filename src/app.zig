@@ -94,7 +94,7 @@ pub const Image = struct {
     pub fn deinit(self: @This(), alloc: std.mem.Allocator) void {
         if (self.data) |data| {
             var d = data;
-            d.deinit();
+            d.deinit(alloc);
         }
         if (self.path) |path| alloc.free(path);
     }
@@ -108,6 +108,7 @@ const App = @This();
 alloc: std.mem.Allocator,
 should_quit: bool,
 vx: vaxis.Vaxis = undefined,
+tty_buffer: [1024]u8 = undefined,
 tty: vaxis.Tty = undefined,
 loop: vaxis.Loop(Event) = undefined,
 state: State = .normal,
@@ -149,15 +150,14 @@ pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
         .alloc = alloc,
         .should_quit = false,
         .vx = vx,
-        .tty = try vaxis.Tty.init(),
         .directories = try Directories.init(alloc, entry_dir),
         .help_menu = help_menu,
-        .text_input = vaxis.widgets.TextInput.init(alloc, &vx.unicode),
+        .text_input = vaxis.widgets.TextInput.init(alloc),
         .actions = CircStack(Action, actions_len).init(),
         .last_known_height = vx.window().height,
         .images = .{ .cache = .init(alloc) },
     };
-
+    app.tty = try vaxis.Tty.init(&app.tty_buffer);
     app.loop = vaxis.Loop(Event){
         .vaxis = &app.vx,
         .tty = &app.tty,
@@ -191,7 +191,7 @@ pub fn deinit(self: *App) void {
     self.help_menu.deinit();
     self.directories.deinit();
     self.text_input.deinit();
-    self.vx.deinit(self.alloc, self.tty.anyWriter());
+    self.vx.deinit(self.alloc, self.tty.writer());
     self.tty.deinit();
     if (self.file_logger) |file_logger| file_logger.deinit();
 
@@ -222,8 +222,8 @@ pub fn run(self: *App) !void {
     try self.loop.start();
     defer self.loop.stop();
 
-    try self.vx.enterAltScreen(self.tty.anyWriter());
-    try self.vx.queryTerminal(self.tty.anyWriter(), 1 * std.time.ns_per_s);
+    try self.vx.enterAltScreen(self.tty.writer());
+    try self.vx.queryTerminal(self.tty.writer(), 1 * std.time.ns_per_s);
     self.vx.caps.kitty_graphics = true;
 
     while (!self.should_quit) {
@@ -248,9 +248,7 @@ pub fn run(self: *App) !void {
 
         try self.drawer.draw(self);
 
-        var buffered = self.tty.bufferedWriter();
-        try self.vx.render(buffered.writer().any());
-        try buffered.flush();
+        try self.vx.render(self.tty.writer());
     }
 
     if (config.empty_trash_on_exit) {

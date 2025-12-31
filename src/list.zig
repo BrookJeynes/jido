@@ -12,21 +12,21 @@ pub fn List(comptime T: type) type {
         pub fn init(alloc: std.mem.Allocator) Self {
             return Self{
                 .alloc = alloc,
-                .items = std.ArrayList(T).init(alloc),
+                .items = .empty,
                 .selected = 0,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.items.deinit();
+            self.items.deinit(self.alloc);
         }
 
         pub fn append(self: *Self, item: T) !void {
-            try self.items.append(item);
+            try self.items.append(self.alloc, item);
         }
 
         pub fn clear(self: *Self) void {
-            self.items.clearAndFree();
+            self.items.clearAndFree(self.alloc);
             self.selected = 0;
         }
 

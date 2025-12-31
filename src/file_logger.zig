@@ -53,7 +53,9 @@ pub fn write(self: FileLogger, msg: []const u8, level: LogLevel) !void {
         defer file.unlock();
         try file.seekFromEnd(0);
 
-        try file.writer().print(
+        var buffer: [1024]u8 = undefined;
+        var file_writer = file.writer(&buffer).interface;
+        try file_writer.print(
             "({d}) {s}: {s}\n",
             .{ std.time.timestamp(), LogLevel.toString(level), msg },
         );
