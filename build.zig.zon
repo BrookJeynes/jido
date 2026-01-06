@@ -2,12 +2,13 @@
     .name = .jido,
     .fingerprint = 0xee45eabe36cafb57,
     .version = "1.3.0",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.2",
 
     .dependencies = .{
+        // Replace with rockorager/libvaxis once https://github.com/rockorager/libvaxis/pull/293 is merged
         .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis.git#75035b169e91a51c233f3742161f8eb8eafca659",
-            .hash = "vaxis-0.5.1-BWNV_IE-CQBYmSf_boEKUyv6den0Gmj5LksxvdCx2pBL",
+            .url = "git+https://github.com/rob9315/libvaxis.git#8d04cffd9137b4a8c56b356de98b32023ae752f3",
+            .hash = "vaxis-0.5.1-BWNV_OA-CQDeFBHIx9ryyASogr2GE3FsAm-l5Ii5-HZT",
         },
         .fuzzig = .{
             .url = "git+https://github.com/fjebaker/fuzzig#4251fe4230d38e721514394a485db62ee1667ff3",
@@ -21,6 +22,11 @@
         .zuid = .{
             .url = "https://github.com/BrookJeynes/zuid/archive/refs/heads/bj/2025-12-31/feat/0.15.1.tar.gz",
             .hash = "zuid-3.0.0-l7aPyUlXAAAk9BLSDm2roA3i78Sy6_GvQI4hwe0PHI_m",
+        },
+        // Replace with zigimg/zigimg once https://github.com/zigimg/zigimg/pull/305 is merged
+        .zigimg = .{
+            .url = "git+https://github.com/brookjeynes/zigimg.git#9714df09f76891323c7fdbbbf23a17b79024fffb",
+            .hash = "zigimg-0.1.0-8_eo2j4mFwCU7tWnqvkYtzqe-OPRn_bxEql_IJhW85LT",
         },
     },
 
