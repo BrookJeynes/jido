@@ -208,6 +208,13 @@ fn drawFilePreview(
                         break :file;
                     }
 
+                    if (cache_entry.status == .failed) {
+                        _ = preview_win.print(&.{
+                            .{ .text = "Failed to process image." },
+                        }, .{});
+                        break :file;
+                    }
+
                     if (cache_entry.image) |img| {
                         img.draw(preview_win, .{ .scale = .contain }) catch |err| {
                             const message = try std.fmt.allocPrint(app.alloc, "Failed to draw image to screen - {}.", .{err});
@@ -224,8 +231,14 @@ fn drawFilePreview(
                     } else {
                         if (cache_entry.data == null) {
                             const path = try app.alloc.dupe(u8, self.current_item_path);
-                            var buffer: [1024]u8 = undefined;
-                            processImage(app, path, &buffer) catch break :unsupported;
+                            processImage(app, path) catch {
+                                app.alloc.free(path);
+                                break :unsupported;
+                            };
+                            _ = preview_win.print(&.{
+                                .{ .text = "Image still processing." },
+                            }, .{});
+                            break :file;
                         }
 
                         if (app.vx.transmitImage(app.alloc, app.tty.writer(), &cache_entry.data.?, .rgba)) |img| {
@@ -241,7 +254,10 @@ fn drawFilePreview(
                                 break :file;
                             };
                             cache_entry.image = img;
-                            cache_entry.data.?.deinit(app.alloc);
+                            if (cache_entry.data) |data| {
+                                var d = data;
+                                d.deinit(app.alloc);
+                            }
                             cache_entry.data = null;
                         } else |_| {
                             break :unsupported;
@@ -250,9 +266,15 @@ fn drawFilePreview(
 
                     break :file;
                 } else {
+                    _ = preview_win.print(&.{
+                        .{ .text = "Processing image." },
+                    }, .{});
+
                     const path = try app.alloc.dupe(u8, self.current_item_path);
-                    var buffer: [1024]u8 = undefined;
-                    processImage(app, path, &buffer) catch break :unsupported;
+                    processImage(app, path) catch {
+                        app.alloc.free(path);
+                        break :unsupported;
+                    };
                 }
 
                 break :file;
@@ -630,7 +652,7 @@ fn drawNotification(
     }, .{ .wrap = .word });
 }
 
-fn processImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupported, OutOfMemory }!void {
+fn processImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!void {
     app.images.cache.put(path, .{ .path = path, .status = .processing }) catch {
         const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to add image to cache.", .{path});
         defer app.alloc.free(message);
@@ -642,18 +664,38 @@ fn processImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupport
     const load_img_thread = std.Thread.spawn(.{}, loadImage, .{
         app,
         path,
-        buffer,
-    }) catch return error.Unsupported;
+    }) catch {
+        app.images.mutex.lock();
+        if (app.images.cache.getPtr(path)) |entry| {
+            entry.status = .failed;
+        }
+        app.images.mutex.unlock();
+
+        const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to spawn processing thread.", .{path});
+        defer app.alloc.free(message);
+        app.notification.write(message, .err) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+
+        return error.Unsupported;
+    };
     load_img_thread.detach();
 }
 
-fn loadImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupported, OutOfMemory }!void {
-    const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path, buffer) catch {
+fn loadImage(app: *App, path: []const u8) error{OutOfMemory}!void {
+    var buf: [(1024 * 1024) * 5]u8 = undefined;
+    const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path, &buf) catch {
+        app.images.mutex.lock();
+        if (app.images.cache.getPtr(path)) |entry| {
+            entry.status = .failed;
+        }
+        app.images.mutex.unlock();
+
         const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to read image from path.", .{path});
         defer app.alloc.free(message);
         app.notification.write(message, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-        return error.Unsupported;
+
+        return;
     };
 
     app.images.mutex.lock();
@@ -665,7 +707,7 @@ fn loadImage(app: *App, path: []const u8, buffer: *[1024]u8) error{ Unsupported,
         defer app.alloc.free(message);
         app.notification.write(message, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-        return error.Unsupported;
+        return;
     }
     app.images.mutex.unlock();
 

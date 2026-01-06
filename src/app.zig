@@ -79,9 +79,11 @@ pub const Event = union(enum) {
 };
 
 pub const Image = struct {
+    const buf_size = (1024 * 1024) * 5; // 5mb
     const Status = enum {
         ready,
         processing,
+        failed,
     };
 
     ///Only use on first transmission. Subsequent draws should use
@@ -91,7 +93,10 @@ pub const Image = struct {
     path: ?[]const u8 = null,
     status: Status = .processing,
 
-    pub fn deinit(self: @This(), alloc: std.mem.Allocator) void {
+    pub fn deinit(self: @This(), alloc: std.mem.Allocator, vx: vaxis.Vaxis, tty: *vaxis.Tty) void {
+        if (self.image) |image| {
+            vx.freeImage(tty.writer(), image.id);
+        }
         if (self.data) |data| {
             var d = data;
             d.deinit(alloc);
@@ -197,7 +202,7 @@ pub fn deinit(self: *App) void {
 
     var image_iter = self.images.cache.iterator();
     while (image_iter.next()) |img| {
-        img.value_ptr.deinit(self.alloc);
+        img.value_ptr.deinit(self.alloc, self.vx, &self.tty);
     }
     self.images.cache.deinit();
 }
