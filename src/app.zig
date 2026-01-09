@@ -74,6 +74,7 @@ pub const Action = union(enum) {
 
 pub const Event = union(enum) {
     image_ready,
+    notification,
     key_press: Key,
     winsize: vaxis.Winsize,
 };

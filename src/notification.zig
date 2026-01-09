@@ -1,4 +1,7 @@
 const std = @import("std");
+const vaxis = @import("vaxis");
+const Event = @import("app.zig").Event;
+
 const FileLogger = @import("file_logger.zig");
 
 const Self = @This();
@@ -18,12 +21,17 @@ style: Style = Style.info,
 fbs: std.io.FixedBufferStream([]u8) = std.io.fixedBufferStream(&buf),
 /// How long until the notification disappears in seconds.
 timer: i64 = 0,
+loop: ?*vaxis.Loop(Event) = null,
 
 pub fn write(self: *Self, text: []const u8, style: Style) !void {
     self.fbs.reset();
     _ = try self.fbs.write(text);
     self.timer = std.time.timestamp();
     self.style = style;
+
+    if (self.loop) |loop| {
+        loop.postEvent(.notification);
+    }
 }
 
 pub fn reset(self: *Self) void {
