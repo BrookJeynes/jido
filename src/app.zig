@@ -80,7 +80,6 @@ pub const Event = union(enum) {
 };
 
 pub const Image = struct {
-    const buf_size = (1024 * 1024) * 5; // 5mb
     const Status = enum {
         ready,
         processing,
