@@ -139,7 +139,11 @@ pub fn main() !void {
             },
         };
 
-        app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else null;
+        app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else logger: {
+            std.log.err("Failed to initialise file logger - no config directory found", .{});
+            break :logger null;
+        };
+        app.notification.loop = &app.loop;
 
         try app.run();
 
