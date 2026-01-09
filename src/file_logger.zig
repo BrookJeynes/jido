@@ -24,18 +24,10 @@ dir: std.fs.Dir,
 file: ?std.fs.File,
 
 pub fn init(dir: std.fs.Dir) FileLogger {
-    var file: ?std.fs.File = null;
-    if (!environment.fileExists(dir, LOG_PATH)) {
-        file = dir.createFile(LOG_PATH, .{}) catch lbl: {
-            std.log.err("Failed to create log file.", .{});
-            break :lbl null;
-        };
-    } else {
-        file = dir.openFile(LOG_PATH, .{ .mode = .write_only }) catch lbl: {
-            std.log.err("Failed to open log file.", .{});
-            break :lbl null;
-        };
-    }
+    const file = dir.createFile(LOG_PATH, .{ .truncate = false, .read = true }) catch |err| {
+        std.log.err("Failed to create/open log file: {s}", .{@errorName(err)});
+        return .{ .dir = dir, .file = null };
+    };
 
     return .{ .dir = dir, .file = file };
 }
@@ -49,15 +41,19 @@ pub fn deinit(self: FileLogger) void {
 
 pub fn write(self: FileLogger, msg: []const u8, level: LogLevel) !void {
     const file = if (self.file) |file| file else return error.NoLogFile;
-    if (try file.tryLock(std.fs.File.Lock.shared)) {
+
+    if (try file.tryLock(.exclusive)) {
         defer file.unlock();
-        try file.seekFromEnd(0);
 
         var buffer: [1024]u8 = undefined;
-        var file_writer = file.writer(&buffer).interface;
+        var file_writer_impl = file.writer(&buffer);
+        const file_writer = &file_writer_impl.interface;
+        try file_writer_impl.seekTo(file.getEndPos() catch 0);
+
         try file_writer.print(
             "({d}) {s}: {s}\n",
             .{ std.time.timestamp(), LogLevel.toString(level), msg },
         );
+        try file_writer.flush();
     }
 }
