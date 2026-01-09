@@ -682,7 +682,7 @@ fn processImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!v
 }
 
 fn loadImage(app: *App, path: []const u8) error{OutOfMemory}!void {
-    var buf: [(1024 * 1024) * 5]u8 = undefined;
+    var buf: [(1024 * 1024) * 5]u8 = undefined; // 5mb
     const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path, &buf) catch {
         app.images.mutex.lock();
         if (app.images.cache.getPtr(path)) |entry| {
@@ -702,6 +702,7 @@ fn loadImage(app: *App, path: []const u8) error{OutOfMemory}!void {
     if (app.images.cache.getPtr(path)) |entry| {
         entry.status = .ready;
         entry.data = data;
+        entry.path = path;
     } else {
         const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to add image to cache.", .{path});
         defer app.alloc.free(message);
