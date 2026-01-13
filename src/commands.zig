@@ -172,3 +172,53 @@ pub fn cd(app: *App, path: []const u8) error{OutOfMemory}!void {
     try app.repopulateDirectory("");
     app.directories.history.reset();
 }
+
+const testing = std.testing;
+
+test "CommandHistory: add and retrieve commands" {
+    var history = CommandHistory{};
+    defer history.deinit(testing.allocator);
+
+    try history.add(":cd /tmp", testing.allocator);
+    try history.add(":config", testing.allocator);
+
+    try testing.expectEqual(@as(usize, 2), history.count);
+}
+
+test "CommandHistory: previous/next navigation" {
+    var history = CommandHistory{};
+    defer history.deinit(testing.allocator);
+
+    try history.add(":cmd1", testing.allocator);
+    try history.add(":cmd2", testing.allocator);
+    try history.add(":cmd3", testing.allocator);
+
+    const cmd3 = history.previous();
+    try testing.expectEqualStrings(":cmd3", cmd3.?);
+
+    const cmd2 = history.previous();
+    try testing.expectEqualStrings(":cmd2", cmd2.?);
+
+    const cmd3_again = history.next();
+    try testing.expectEqualStrings(":cmd3", cmd3_again.?);
+
+    const at_end = history.next();
+    try testing.expect(at_end == null);
+}
+
+test "CommandHistory: wraparound at capacity" {
+    var history = CommandHistory{};
+    defer history.deinit(testing.allocator);
+
+    var i: u32 = 0;
+    while (i < 15) : (i += 1) {
+        const cmd = try std.fmt.allocPrint(testing.allocator, ":cmd{}", .{i});
+        defer testing.allocator.free(cmd);
+        try history.add(cmd, testing.allocator);
+    }
+
+    try testing.expectEqual(@as(usize, 10), history.count);
+
+    const recent = history.previous();
+    try testing.expectEqualStrings(":cmd14", recent.?);
+}
