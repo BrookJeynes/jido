@@ -162,12 +162,13 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                         .new_file => try events.createNewFile(app),
                         .rename => try events.rename(app),
                         .change_dir => {
-                            const path = app.inputToSlice();
+                            const path = try app.text_input.toOwnedSlice();
+                            defer app.alloc.free(path);
                             try commands.cd(app, path);
-                            app.text_input.clearAndFree();
                         },
                         .command => {
-                            const command = app.inputToSlice();
+                            const command = try app.text_input.toOwnedSlice();
+                            defer app.alloc.free(command);
 
                             // Push command to history if it's not empty.
                             if (!std.mem.eql(u8, std.mem.trim(u8, command, " "), ":")) {
@@ -209,7 +210,6 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                                     break :supported;
                                 }
 
-                                app.text_input.clearAndFree();
                                 try app.text_input.insertSliceAtCursor(":UnsupportedCommand");
                             }
 
@@ -259,11 +259,11 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
 
                     switch (app.state) {
                         .fuzzy => {
-                            const fuzzy = app.inputToSlice();
+                            const fuzzy = app.readInput();
                             try app.repopulateDirectory(fuzzy);
                         },
                         .command => {
-                            const command = app.inputToSlice();
+                            const command = app.readInput();
                             if (!std.mem.startsWith(u8, command, ":")) {
                                 app.text_input.clearAndFree();
                                 app.text_input.insertSliceAtCursor(":") catch |err| {

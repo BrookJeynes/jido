@@ -62,7 +62,7 @@ pub fn draw(self: *Drawer, app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
         try self.drawFilePreview(app, win, file_name_bar);
     }
 
-    const input = app.inputToSlice();
+    const input = app.readInput();
     drawUserInput(app.state, &app.text_input, input, win);
 
     // Notification should be drawn last.

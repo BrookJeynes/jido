@@ -87,7 +87,8 @@ pub fn rename(app: *App) error{OutOfMemory}!void {
         return;
     };
 
-    const new_path = app.inputToSlice();
+    const new_path = try app.text_input.toOwnedSlice();
+    defer app.alloc.free(new_path);
 
     if (environment.fileExists(app.directories.dir, new_path)) {
         message = try std.fmt.allocPrint(app.alloc, "Can not rename file - '{s}' already exists.", .{new_path});
@@ -111,13 +112,10 @@ pub fn rename(app: *App) error{OutOfMemory}!void {
         }
 
         try app.repopulateDirectory("");
-        app.text_input.clearAndFree();
 
         message = try std.fmt.allocPrint(app.alloc, "Renamed '{s}' to '{s}'.", .{ entry.name, new_path });
         app.notification.write(message.?, .info) catch {};
     }
-
-    app.text_input.clearAndFree();
 }
 
 pub fn forceDelete(app: *App) error{OutOfMemory}!void {
@@ -445,18 +443,17 @@ pub fn createNewDir(app: *App) error{OutOfMemory}!void {
     var message: ?[]const u8 = null;
     defer if (message) |msg| app.alloc.free(msg);
 
-    const dir = app.inputToSlice();
+    const dir = try app.text_input.toOwnedSlice();
+    defer app.alloc.free(dir);
 
     app.directories.dir.makeDir(dir) catch |err| {
         message = try std.fmt.allocPrint(app.alloc, "Failed to create directory '{s}' - {}", .{ dir, err });
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
-        app.text_input.clearAndFree();
         return;
     };
 
     try app.repopulateDirectory("");
-    app.text_input.clearAndFree();
 
     message = try std.fmt.allocPrint(app.alloc, "Created new directory '{s}'.", .{dir});
     app.notification.write(message.?, .info) catch {};
@@ -466,7 +463,8 @@ pub fn createNewFile(app: *App) error{OutOfMemory}!void {
     var message: ?[]const u8 = null;
     defer if (message) |msg| app.alloc.free(msg);
 
-    const file = app.inputToSlice();
+    const file = try app.text_input.toOwnedSlice();
+    defer app.alloc.free(file);
 
     if (environment.fileExists(app.directories.dir, file)) {
         message = try std.fmt.allocPrint(app.alloc, "Can not create file - '{s}' already exists.", .{file});
@@ -476,18 +474,14 @@ pub fn createNewFile(app: *App) error{OutOfMemory}!void {
             message = try std.fmt.allocPrint(app.alloc, "Failed to create file '{s}' - {}", .{ file, err });
             app.notification.write(message.?, .err) catch {};
             if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
-            app.text_input.clearAndFree();
             return;
         };
 
         try app.repopulateDirectory("");
-        app.text_input.clearAndFree();
 
         message = try std.fmt.allocPrint(app.alloc, "Created new file '{s}'.", .{file});
         app.notification.write(message.?, .info) catch {};
     }
-
-    app.text_input.clearAndFree();
 }
 
 pub fn undo(app: *App) error{OutOfMemory}!void {
