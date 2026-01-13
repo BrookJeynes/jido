@@ -208,8 +208,19 @@ pub fn deinit(self: *App) void {
 }
 
 pub fn inputToSlice(self: *App) []const u8 {
-    self.text_input.buf.cursor = self.text_input.buf.realLength();
-    return self.text_input.sliceToCursor(&self.text_input_buf);
+    const first = self.text_input.buf.firstHalf();
+    const second = self.text_input.buf.secondHalf();
+    var dest_idx: usize = 0;
+
+    const first_len = @min(first.len, self.text_input_buf.len - dest_idx);
+    @memcpy(self.text_input_buf[dest_idx .. dest_idx + first_len], first[0..first_len]);
+    dest_idx += first_len;
+
+    const second_len = @min(second.len, self.text_input_buf.len - dest_idx);
+    @memcpy(self.text_input_buf[dest_idx .. dest_idx + second_len], second[0..second_len]);
+    dest_idx += second_len;
+
+    return self.text_input_buf[0..dest_idx];
 }
 
 pub fn repopulateDirectory(self: *App, fuzzy: []const u8) error{OutOfMemory}!void {
@@ -253,7 +264,9 @@ pub fn run(self: *App) !void {
 
         try self.drawer.draw(self);
 
-        try self.vx.render(self.tty.writer());
+        const writer = self.tty.writer();
+        try self.vx.render(writer);
+        try writer.flush();
     }
 
     if (config.empty_trash_on_exit) {

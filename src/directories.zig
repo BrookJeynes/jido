@@ -2,7 +2,6 @@ const std = @import("std");
 const List = @import("./list.zig").List;
 const CircStack = @import("./circ_stack.zig").CircularStack;
 const config = &@import("./config.zig").config;
-const vaxis = @import("vaxis");
 const fuzzig = @import("fuzzig");
 
 const history_len: usize = 100;
