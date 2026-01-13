@@ -163,3 +163,91 @@ pub fn clearChildEntries(self: *Self) void {
     }
     self.child_entries.clear();
 }
+
+const testing = std.testing;
+
+test "Directories: populateEntries respects show_hidden config" {
+    const local_config = &@import("./config.zig").config;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const visible = try tmp.dir.createFile("visible.txt", .{});
+        visible.close();
+        const hidden = try tmp.dir.createFile(".hidden.txt", .{});
+        hidden.close();
+    }
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &path_buf);
+    const iter_dir = try std.fs.openDirAbsolute(tmp_path, .{ .iterate = true });
+
+    var dirs = try Self.init(testing.allocator, null);
+    defer {
+        dirs.clearEntries();
+        dirs.clearChildEntries();
+        dirs.entries.deinit();
+        dirs.child_entries.deinit();
+        dirs.searcher.deinit();
+    }
+    dirs.dir.close();
+    dirs.dir = iter_dir;
+
+    local_config.show_hidden = false;
+    try dirs.populateEntries("");
+    try testing.expectEqual(@as(usize, 1), dirs.entries.len());
+
+    dirs.clearEntries();
+    local_config.show_hidden = true;
+    try dirs.populateEntries("");
+    try testing.expectEqual(@as(usize, 2), dirs.entries.len());
+}
+
+test "Directories: fuzzy search filters entries" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    {
+        const f1 = try tmp.dir.createFile("test_file.txt", .{});
+        f1.close();
+        const f2 = try tmp.dir.createFile("other.txt", .{});
+        f2.close();
+        const f3 = try tmp.dir.createFile("test_another.txt", .{});
+        f3.close();
+    }
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const tmp_path = try tmp.dir.realpath(".", &path_buf);
+    const iter_dir = try std.fs.openDirAbsolute(tmp_path, .{ .iterate = true });
+
+    var dirs = try Self.init(testing.allocator, null);
+    defer {
+        dirs.clearEntries();
+        dirs.clearChildEntries();
+        dirs.entries.deinit();
+        dirs.child_entries.deinit();
+        dirs.searcher.deinit();
+    }
+    dirs.dir.close();
+    dirs.dir = iter_dir;
+
+    try dirs.populateEntries("test");
+    // Should match test_*
+    try testing.expect(dirs.entries.len() >= 2);
+
+    // Verify all entries contain "test"
+    for (dirs.entries.all()) |entry| {
+        try testing.expect(std.mem.indexOf(u8, entry.name, "test") != null);
+    }
+}
+
+test "Directories: fullPath resolves relative paths" {
+    var dirs = try Self.init(testing.allocator, ".");
+    defer dirs.deinit();
+
+    const path = try dirs.fullPath(".");
+    try testing.expect(path.len > 0);
+    // Should be absolute
+    try testing.expect(std.mem.indexOf(u8, path, "/") != null);
+}
