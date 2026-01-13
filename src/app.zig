@@ -207,7 +207,10 @@ pub fn deinit(self: *App) void {
     self.images.cache.deinit();
 }
 
-pub fn inputToSlice(self: *App) []const u8 {
+/// Reads the current text input without consuming it.
+/// The returned slice is valid until the next call to readInput() or until
+/// the text_input buffer is modified.
+pub fn readInput(self: *App) []const u8 {
     const first = self.text_input.buf.firstHalf();
     const second = self.text_input.buf.secondHalf();
     var dest_idx: usize = 0;
