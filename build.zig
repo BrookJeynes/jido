@@ -50,7 +50,6 @@ pub fn build(b: *std.Build) !void {
     build_options.addOption(std.SemanticVersion, "version", version);
     const build_options_module = build_options.createModule();
 
-    // Building targets for release.
     const build_all = b.option(bool, "all-targets", "Build all targets in ReleaseSafe mode.") orelse false;
     if (build_all) {
         try buildTargets(b, build_options_module);
@@ -67,6 +66,50 @@ pub fn build(b: *std.Build) !void {
     }
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
+    const fuzzig = b.dependency("fuzzig", .{ .target = target, .optimize = optimize }).module("fuzzig");
+    const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
+    const zeit = b.dependency("zeit", .{ .target = target, .optimize = optimize }).module("zeit");
+    const test_step = b.step("test", "Run unit tests");
+    const unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    unit_tests.root_module.addImport("options", build_options_module);
+    unit_tests.root_module.addImport("vaxis", libvaxis);
+    unit_tests.root_module.addImport("fuzzig", fuzzig);
+    unit_tests.root_module.addImport("zeit", zeit);
+    unit_tests.root_module.addImport("zuid", zuid);
+
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    test_step.dependOn(&run_unit_tests.step);
+
+    const integration_tests = &[_][]const u8{
+        "src/test_navigation.zig",
+        "src/test_file_operations.zig",
+    };
+
+    for (integration_tests) |test_file| {
+        const test_exe = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(test_file),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        test_exe.root_module.addImport("vaxis", libvaxis);
+        test_exe.root_module.addImport("fuzzig", fuzzig);
+        test_exe.root_module.addImport("zuid", zuid);
+        test_exe.root_module.addImport("zeit", zeit);
+        test_exe.root_module.addImport("options", build_options_module);
+
+        const run_test = b.addRunArtifact(test_exe);
+        test_step.dependOn(&run_test.step);
+    }
 }
 
 fn buildTargets(b: *std.Build, build_options: *std.Build.Module) !void {
