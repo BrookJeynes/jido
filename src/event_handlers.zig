@@ -221,8 +221,6 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                     if (app.state != .help_menu) app.state = .normal;
                     app.directories.entries.selected = selected;
                 },
-                Key.left => app.text_input.cursorLeft(),
-                Key.right => app.text_input.cursorRight(),
                 Key.up => {
                     if (app.state == .command) {
                         if (app.command_history.previous()) |command| {
