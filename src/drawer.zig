@@ -8,6 +8,7 @@ const vaxis = @import("vaxis");
 const Git = @import("./git.zig");
 const List = @import("./list.zig").List;
 const zeit = @import("zeit");
+const Image = @import("./image.zig");
 
 const Drawer = @This();
 
@@ -231,7 +232,7 @@ fn drawFilePreview(
                     } else {
                         if (cache_entry.data == null) {
                             const path = try app.alloc.dupe(u8, self.current_item_path);
-                            processImage(app, path) catch {
+                            Image.processImage(app.alloc, app, path) catch {
                                 app.alloc.free(path);
                                 break :unsupported;
                             };
@@ -271,7 +272,7 @@ fn drawFilePreview(
                     }, .{});
 
                     const path = try app.alloc.dupe(u8, self.current_item_path);
-                    processImage(app, path) catch {
+                    Image.processImage(app.alloc, app, path) catch {
                         app.alloc.free(path);
                         break :unsupported;
                     };
@@ -650,67 +651,4 @@ fn drawNotification(
         .text = notification.slice(),
         .style = config.styles.notification.box,
     }, .{ .wrap = .word });
-}
-
-fn processImage(app: *App, path: []const u8) error{ Unsupported, OutOfMemory }!void {
-    app.images.cache.put(path, .{ .path = path, .status = .processing }) catch {
-        const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to add image to cache.", .{path});
-        defer app.alloc.free(message);
-        app.notification.write(message, .err) catch {};
-        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-        return error.Unsupported;
-    };
-
-    const load_img_thread = std.Thread.spawn(.{}, loadImage, .{
-        app,
-        path,
-    }) catch {
-        app.images.mutex.lock();
-        if (app.images.cache.getPtr(path)) |entry| {
-            entry.status = .failed;
-        }
-        app.images.mutex.unlock();
-
-        const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to spawn processing thread.", .{path});
-        defer app.alloc.free(message);
-        app.notification.write(message, .err) catch {};
-        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-        return error.Unsupported;
-    };
-    load_img_thread.detach();
-}
-
-fn loadImage(app: *App, path: []const u8) error{OutOfMemory}!void {
-    var buf: [(1024 * 1024) * 5]u8 = undefined; // 5mb
-    const data = vaxis.zigimg.Image.fromFilePath(app.alloc, path, &buf) catch {
-        app.images.mutex.lock();
-        if (app.images.cache.getPtr(path)) |entry| {
-            entry.status = .failed;
-        }
-        app.images.mutex.unlock();
-
-        const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to read image from path.", .{path});
-        defer app.alloc.free(message);
-        app.notification.write(message, .err) catch {};
-        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-        return;
-    };
-
-    app.images.mutex.lock();
-    if (app.images.cache.getPtr(path)) |entry| {
-        entry.status = .ready;
-        entry.data = data;
-        entry.path = path;
-    } else {
-        const message = try std.fmt.allocPrint(app.alloc, "Failed to load image '{s}' - error occurred while attempting to add image to cache.", .{path});
-        defer app.alloc.free(message);
-        app.notification.write(message, .err) catch {};
-        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-        return;
-    }
-    app.images.mutex.unlock();
-
-    app.loop.postEvent(.image_ready);
 }

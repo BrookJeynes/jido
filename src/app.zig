@@ -8,6 +8,7 @@ const List = @import("./list.zig").List;
 const Directories = @import("./directories.zig");
 const FileLogger = @import("./file_logger.zig");
 const CircStack = @import("./circ_stack.zig").CircularStack;
+const Image = @import("./image.zig");
 const zuid = @import("zuid");
 const vaxis = @import("vaxis");
 const Key = vaxis.Key;
@@ -79,32 +80,6 @@ pub const Event = union(enum) {
     winsize: vaxis.Winsize,
 };
 
-pub const Image = struct {
-    const Status = enum {
-        ready,
-        processing,
-        failed,
-    };
-
-    ///Only use on first transmission. Subsequent draws should use
-    ///`Image.image`.
-    data: ?vaxis.zigimg.Image = null,
-    image: ?vaxis.Image = null,
-    path: ?[]const u8 = null,
-    status: Status = .processing,
-
-    pub fn deinit(self: @This(), alloc: std.mem.Allocator, vx: vaxis.Vaxis, tty: *vaxis.Tty) void {
-        if (self.image) |image| {
-            vx.freeImage(tty.writer(), image.id);
-        }
-        if (self.data) |data| {
-            var d = data;
-            d.deinit(alloc);
-        }
-        if (self.path) |path| alloc.free(path);
-    }
-};
-
 const actions_len = 100;
 const image_cache_cap = 100;
 
@@ -132,10 +107,7 @@ text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
 last_known_height: usize,
 
-images: struct {
-    mutex: std.Thread.Mutex = .{},
-    cache: std.StringHashMap(Image),
-},
+images: Image.Cache,
 
 pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
     var vx = try vaxis.init(alloc, .{
