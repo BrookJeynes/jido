@@ -9,6 +9,7 @@ const Git = @import("./git.zig");
 const List = @import("./list.zig").List;
 const zeit = @import("zeit");
 const Image = @import("./image.zig");
+const Archive = @import("./archive.zig");
 
 const Drawer = @This();
 
@@ -317,6 +318,37 @@ fn drawFilePreview(
                 _ = preview_win.print(&.{
                     .{ .text = app.directories.pdf_contents.? },
                 }, .{});
+                break :file;
+            }
+
+            // Handle archives
+            if (Archive.ArchiveType.fromPath(entry.name)) |archive_type| {
+                if (app.archive_files) |*files| {
+                    files.deinit(app.alloc);
+                    app.archive_files = null;
+                }
+
+                app.archive_files = Archive.listArchiveContents(
+                    app.alloc,
+                    file,
+                    archive_type,
+                    100,
+                    config.sort_dirs,
+                ) catch |err| {
+                    const message = try std.fmt.allocPrint(app.alloc, "Failed to read archive: {s}", .{@errorName(err)});
+                    defer app.alloc.free(message);
+                    app.notification.write(message, .err) catch {};
+                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                    _ = preview_win.print(&.{.{ .text = "Failed to read archive." }}, .{});
+                    break :file;
+                };
+
+                for (app.archive_files.?.entries.items, 0..) |path, i| {
+                    if (i >= preview_win.height) break;
+                    const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
+                    w.fill(vaxis.Cell{ .style = config.styles.list_item });
+                    _ = w.print(&.{.{ .text = path, .style = config.styles.list_item }}, .{});
+                }
                 break :file;
             }
 
