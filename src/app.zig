@@ -9,6 +9,7 @@ const Directories = @import("./directories.zig");
 const FileLogger = @import("./file_logger.zig");
 const CircStack = @import("./circ_stack.zig").CircularStack;
 const Image = @import("./image.zig");
+const Archive = @import("./archive.zig");
 const zuid = @import("zuid");
 const vaxis = @import("vaxis");
 const Key = vaxis.Key;
@@ -98,6 +99,7 @@ drawer: Drawer = Drawer{},
 
 help_menu: List([]const u8),
 directories: Directories,
+archive_files: ?Archive.ArchiveContents = null,
 notification: Notification = Notification{},
 file_logger: ?FileLogger = null,
 
@@ -171,6 +173,7 @@ pub fn deinit(self: *App) void {
     self.vx.deinit(self.alloc, self.tty.writer());
     self.tty.deinit();
     if (self.file_logger) |file_logger| file_logger.deinit();
+    if (self.archive_files) |*archive_files| archive_files.deinit(self.alloc);
 
     var image_iter = self.images.cache.iterator();
     while (image_iter.next()) |img| {
