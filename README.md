@@ -87,16 +87,18 @@ Config schema:
 Config = struct {
     .show_hidden: bool = true,
     .sort_dirs:   bool = true,
-    .show_images: bool = true,           -- Images are only supported in a terminal 
-                                            supporting the `kitty image protocol`.
+    .show_images: bool = true,             -- Images are only supported in a terminal
+                                              supporting the `kitty image protocol`.
     .preview_file: bool = true,
-    .empty_trash_on_exit: bool = false,  -- Emptying the trash permanently deletes 
-                                            all files within the trash. These 
-                                            files are not recoverable past this 
-                                            point.
-    .true_dir_size: bool = false,        -- Display size of directory including 
-                                            all its children. This can and will 
-                                            cause lag on deeply nested directories.
+    .empty_trash_on_exit: bool = false,    -- Emptying the trash permanently deletes
+                                              all files within the trash. These
+                                              files are not recoverable past this
+                                              point.
+    .true_dir_size: bool = false,          -- Display size of directory including
+                                              all its children. This can and will
+                                              cause lag on deeply nested directories.
+    .archive_traversal_limit: usize = 100, -- How many files to be traversed when reading
+                                              an archive (zip, tar, etc.).
     .keybinds: Keybinds,
     .styles: Styles
 }
