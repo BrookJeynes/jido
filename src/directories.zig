@@ -111,7 +111,11 @@ pub fn populateChildEntries(
             continue;
         }
 
-        try self.child_entries.append(try self.alloc.dupe(u8, entry.name));
+        if (entry.kind == .directory) {
+            try self.child_entries.append(try std.fmt.allocPrint(self.alloc, "{s}/", .{entry.name}));
+        } else {
+            try self.child_entries.append(try self.alloc.dupe(u8, entry.name));
+        }
     }
 
     if (config.sort_dirs == true) {
@@ -133,7 +137,7 @@ pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
 
         try self.entries.append(.{
             .kind = entry.kind,
-            .name = try self.alloc.dupe(u8, entry.name),
+            .name = if (entry.kind == .directory) try std.fmt.allocPrint(self.alloc, "{s}/", .{entry.name}) else try self.alloc.dupe(u8, entry.name),
         });
     }
 
