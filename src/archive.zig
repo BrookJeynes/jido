@@ -1,6 +1,8 @@
 const std = @import("std");
 const ascii = @import("std").ascii;
 
+const archive_buf_size = 8192;
+
 pub const ArchiveType = enum {
     tar,
     @"tar.gz",
@@ -24,7 +26,6 @@ pub const ArchiveType = enum {
 
 pub const ArchiveContents = struct {
     entries: std.ArrayList([]const u8),
-    total_count: usize,
 
     pub fn deinit(self: *ArchiveContents, alloc: std.mem.Allocator) void {
         for (self.entries.items) |entry| alloc.free(entry);
@@ -36,29 +37,20 @@ pub fn listArchiveContents(
     alloc: std.mem.Allocator,
     file: std.fs.File,
     archive_type: ArchiveType,
-    limit: usize,
-    sort: bool,
+    traversal_limit: usize,
 ) !ArchiveContents {
-    var buffer: [8192]u8 = undefined;
+    var buffer: [archive_buf_size]u8 = undefined;
     var reader = file.reader(&buffer);
 
     const contents = switch (archive_type) {
-        .tar => try listTar(alloc, &reader.interface, limit),
-        .@"tar.gz" => try listTarGz(alloc, &reader.interface, limit),
-        .@"tar.xz" => try listTarXz(alloc, &reader.interface, limit),
-        .@"tar.zst" => try listTarZst(alloc, &reader.interface, limit),
-        .zip => try listZip(alloc, file, limit),
+        .tar => try listTar(alloc, &reader.interface, traversal_limit),
+        .@"tar.gz" => try listTarGz(alloc, &reader.interface, traversal_limit),
+        .@"tar.xz" => try listTarXz(alloc, &reader.interface, traversal_limit),
+        .@"tar.zst" => try listTarZst(alloc, &reader.interface, traversal_limit),
+        .zip => try listZip(alloc, file, traversal_limit),
     };
 
-    if (sort) {
-        std.mem.sort([]const u8, contents.entries.items, {}, sortEntry);
-    }
-
     return contents;
-}
-
-fn sortEntry(_: void, lhs: []const u8, rhs: []const u8) bool {
-    return std.mem.lessThan(u8, lhs, rhs);
 }
 
 fn extractTopLevelEntry(
@@ -67,66 +59,25 @@ fn extractTopLevelEntry(
     is_directory: bool,
     truncated: bool,
 ) ![]const u8 {
+    var is_directory_internal = is_directory;
+    var path = full_path;
+
     if (std.mem.indexOfScalar(u8, full_path, '/')) |idx| {
-        const dir_name = full_path[0..idx];
-        if (truncated) {
-            return try std.fmt.allocPrint(alloc, "{s}.../", .{dir_name});
-        } else {
-            return try std.fmt.allocPrint(alloc, "{s}/", .{dir_name});
-        }
+        path = full_path[0..idx];
+        is_directory_internal = true;
     }
 
-    if (is_directory or std.mem.endsWith(u8, full_path, "/")) {
-        if (std.mem.endsWith(u8, full_path, "/")) {
-            if (truncated) {
-                return try std.fmt.allocPrint(alloc, "{s}...", .{full_path[0 .. full_path.len - 1]});
-            } else {
-                return try alloc.dupe(u8, full_path);
-            }
-        } else {
-            if (truncated) {
-                return try std.fmt.allocPrint(alloc, "{s}.../", .{full_path});
-            } else {
-                return try std.fmt.allocPrint(alloc, "{s}/", .{full_path});
-            }
-        }
-    } else {
-        if (truncated) {
-            return try std.fmt.allocPrint(alloc, "{s}...", .{full_path});
-        } else {
-            return try alloc.dupe(u8, full_path);
-        }
-    }
-}
-
-fn addUniqueEntry(
-    alloc: std.mem.Allocator,
-    entries: *std.ArrayList([]const u8),
-    seen: *std.StringHashMap(void),
-    entry: []const u8,
-    limit: usize,
-    total_count: *usize,
-) !bool {
-    const gop = try seen.getOrPut(entry);
-    if (gop.found_existing) {
-        alloc.free(entry);
-        return true;
-    }
-
-    if (entries.items.len >= limit) {
-        alloc.free(entry);
-        return false;
-    }
-
-    try entries.append(alloc, entry);
-    total_count.* += 1;
-    return true;
+    return try std.fmt.allocPrint(
+        alloc,
+        "{s}{s}{s}",
+        .{ path, if (truncated) "..." else "", if (is_directory_internal) "/" else "" },
+    );
 }
 
 fn listTar(
     alloc: std.mem.Allocator,
     reader: anytype,
-    limit: usize,
+    traversal_limit: usize,
 ) !ArchiveContents {
     var entries: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -137,7 +88,6 @@ fn listTar(
     var seen = std.StringHashMap(void).init(alloc);
     defer seen.deinit();
 
-    var total_count: usize = 0;
     var diagnostics: std.tar.Diagnostics = .{ .allocator = alloc };
     defer diagnostics.deinit();
 
@@ -149,20 +99,25 @@ fn listTar(
     });
     iter.diagnostics = &diagnostics;
 
-    while (try iter.next()) |tar_file| {
-        const full_path = tar_file.name;
-        const is_dir = tar_file.kind == .directory;
+    for (0..traversal_limit) |_| {
+        const tar_file = try iter.next();
+        if (tar_file == null) break;
 
-        const truncated = full_path.len >= std.fs.max_path_bytes;
-        const top_level = try extractTopLevelEntry(alloc, full_path, is_dir, truncated);
-        if (!try addUniqueEntry(alloc, &entries, &seen, top_level, limit, &total_count)) {
-            break;
+        const is_dir = tar_file.?.kind == .directory;
+        const truncated = tar_file.?.name.len >= std.fs.max_path_bytes;
+        const entry = try extractTopLevelEntry(alloc, tar_file.?.name, is_dir, truncated);
+
+        const gop = try seen.getOrPut(entry);
+        if (gop.found_existing) {
+            alloc.free(entry);
+            continue;
         }
+
+        try entries.append(alloc, entry);
     }
 
     return ArchiveContents{
         .entries = entries,
-        .total_count = total_count,
     };
 }
 
@@ -205,7 +160,7 @@ fn listTarZst(
 fn listZip(
     alloc: std.mem.Allocator,
     file: std.fs.File,
-    limit: usize,
+    traversal_limit: usize,
 ) !ArchiveContents {
     var entries: std.ArrayList([]const u8) = .empty;
     errdefer {
@@ -216,31 +171,36 @@ fn listZip(
     var seen = std.StringHashMap(void).init(alloc);
     defer seen.deinit();
 
-    var total_count: usize = 0;
-
-    var buffer: [8192]u8 = undefined;
+    var buffer: [archive_buf_size]u8 = undefined;
     var file_reader = file.reader(&buffer);
 
     var iter = try std.zip.Iterator.init(&file_reader);
-    var filename_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var file_name_buf: [std.fs.max_path_bytes]u8 = undefined;
 
-    while (try iter.next()) |entry| {
-        const filename_len = @min(entry.filename_len, filename_buf.len);
-        const truncated = entry.filename_len > filename_buf.len;
+    for (0..traversal_limit) |_| {
+        const zip_file = try iter.next();
+        if (zip_file == null) break;
 
-        try file_reader.seekTo(entry.header_zip_offset + @sizeOf(std.zip.CentralDirectoryFileHeader));
-        const filename = filename_buf[0..filename_len];
-        try file_reader.interface.readSliceAll(filename);
+        const file_name_len = @min(zip_file.?.filename_len, file_name_buf.len);
+        const truncated = zip_file.?.filename_len > file_name_buf.len;
 
-        const is_dir = std.mem.endsWith(u8, filename, "/");
-        const top_level = try extractTopLevelEntry(alloc, filename, is_dir, truncated);
-        if (!try addUniqueEntry(alloc, &entries, &seen, top_level, limit, &total_count)) {
-            break;
+        try file_reader.seekTo(zip_file.?.header_zip_offset + @sizeOf(std.zip.CentralDirectoryFileHeader));
+        const file_name = file_name_buf[0..file_name_len];
+        try file_reader.interface.readSliceAll(file_name);
+
+        const is_dir = std.mem.endsWith(u8, file_name, "/");
+        const entry = try extractTopLevelEntry(alloc, file_name, is_dir, truncated);
+
+        const gop = try seen.getOrPut(entry);
+        if (gop.found_existing) {
+            alloc.free(entry);
+            continue;
         }
+
+        try entries.append(alloc, entry);
     }
 
     return ArchiveContents{
         .entries = entries,
-        .total_count = total_count,
     };
 }

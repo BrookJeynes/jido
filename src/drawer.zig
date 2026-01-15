@@ -5,6 +5,7 @@ const Notification = @import("./notification.zig");
 const Directories = @import("./directories.zig");
 const config = &@import("./config.zig").config;
 const vaxis = @import("vaxis");
+const sort = @import("./sort.zig");
 const Git = @import("./git.zig");
 const List = @import("./list.zig").List;
 const zeit = @import("zeit");
@@ -332,8 +333,7 @@ fn drawFilePreview(
                     app.alloc,
                     file,
                     archive_type,
-                    100,
-                    config.sort_dirs,
+                    config.archive_traversal_limit,
                 ) catch |err| {
                     const message = try std.fmt.allocPrint(app.alloc, "Failed to read archive: {s}", .{@errorName(err)});
                     defer app.alloc.free(message);
@@ -342,6 +342,10 @@ fn drawFilePreview(
                     _ = preview_win.print(&.{.{ .text = "Failed to read archive." }}, .{});
                     break :file;
                 };
+
+                if (config.sort_dirs) {
+                    std.mem.sort([]const u8, app.archive_files.?.entries.items, {}, sort.string);
+                }
 
                 for (app.archive_files.?.entries.items, 0..) |path, i| {
                     if (i >= preview_win.height) break;

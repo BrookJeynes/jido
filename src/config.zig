@@ -19,6 +19,7 @@ const Config = struct {
     empty_trash_on_exit: bool = false,
     true_dir_size: bool = false,
     entry_dir: ?[]const u8 = null,
+    archive_traversal_limit: usize = 100,
     styles: Styles = .{},
     keybinds: Keybinds = .{},
 

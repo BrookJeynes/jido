@@ -2,7 +2,6 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const App = @import("app.zig");
 
-
 pub const Cache = struct {
     mutex: std.Thread.Mutex = .{},
     cache: std.StringHashMap(Image),
@@ -23,7 +22,7 @@ image: ?vaxis.Image = null,
 path: ?[]const u8 = null,
 status: Status = .processing,
 
-pub fn deinit(self: @This(), alloc: std.mem.Allocator, vx: vaxis.Vaxis, tty: *vaxis.Tty) void {
+pub fn deinit(self: Image, alloc: std.mem.Allocator, vx: vaxis.Vaxis, tty: *vaxis.Tty) void {
     if (self.image) |image| {
         vx.freeImage(tty.writer(), image.id);
     }
