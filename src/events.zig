@@ -1,9 +1,13 @@
 const std = @import("std");
-const App = @import("./app.zig");
-const config = &@import("./config.zig").config;
-const zuid = @import("zuid");
-const environment = @import("./environment.zig");
+
 const vaxis = @import("vaxis");
+const zuid = @import("zuid");
+
+const App = @import("./app.zig");
+const Archive = @import("./archive.zig");
+const environment = @import("./environment.zig");
+
+const config = &@import("./config.zig").config;
 
 pub fn delete(app: *App) error{OutOfMemory}!void {
     var message: ?[]const u8 = null;
@@ -562,4 +566,92 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
     }
 
     app.directories.entries.selected = selected;
+}
+
+pub fn extractArchive(app: *App) error{OutOfMemory}!void {
+    var message: ?[]const u8 = null;
+    defer if (message) |msg| app.alloc.free(msg);
+
+    const entry = (app.directories.getSelected() catch {
+        app.notification.write("Can not extract - no item selected.", .warn) catch {};
+        return;
+    }) orelse return;
+
+    const archive_type = Archive.ArchiveType.fromPath(entry.name) orelse {
+        app.notification.write("Not an archive file.", .warn) catch {};
+        return;
+    };
+
+    const extract_dir_name = Archive.getExtractDirName(entry.name);
+
+    if (environment.fileExists(app.directories.dir, extract_dir_name)) {
+        message = try std.fmt.allocPrint(app.alloc, "Can not extract file(s) - '{s}' already exists.", .{extract_dir_name});
+        app.notification.write(message.?, .warn) catch {};
+        return;
+    }
+
+    var dest_dir = app.directories.dir.makeOpenPath(extract_dir_name, .{}) catch |err| {
+        message = try std.fmt.allocPrint(app.alloc, "Failed to extract archive '{s}' - {}.", .{ extract_dir_name, err });
+        app.notification.write(message.?, .err) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
+        return;
+    };
+    defer dest_dir.close();
+
+    const archive_file = app.directories.dir.openFile(entry.name, .{}) catch |err| {
+        message = try std.fmt.allocPrint(
+            app.alloc,
+            "Failed to open archive '{s}' - {}.",
+            .{ entry.name, err },
+        );
+        app.notification.write(message.?, .err) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
+
+        if (!config.keep_partial_extraction) {
+            app.directories.dir.deleteTree(extract_dir_name) catch {};
+        }
+        return;
+    };
+    defer archive_file.close();
+
+    const result = Archive.extractArchive(
+        app.alloc,
+        archive_file,
+        archive_type,
+        dest_dir,
+        app.file_logger,
+    ) catch |err| {
+        message = try std.fmt.allocPrint(
+            app.alloc,
+            "Failed to extract '{s}' - {s}.",
+            .{ entry.name, @errorName(err) },
+        );
+        app.notification.write(message.?, .err) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
+
+        if (!config.keep_partial_extraction) {
+            app.directories.dir.deleteTree(extract_dir_name) catch {};
+        }
+        return;
+    };
+
+    if (result.files_skipped > 0) {
+        message = try std.fmt.allocPrint(
+            app.alloc,
+            "Extracted {d} files, {d} directories to './{s}{s}'. Failed to extract {d} files, check the log file for more details.",
+            .{ result.files_extracted, result.dirs_created, std.fs.path.sep_str, extract_dir_name, result.files_skipped },
+        );
+        app.notification.write(message.?, .err) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
+    } else {
+        message = try std.fmt.allocPrint(
+            app.alloc,
+            "Extracted {d} files, {d} directories to './{s}{s}'.",
+            .{ result.files_extracted, result.dirs_created, std.fs.path.sep_str, extract_dir_name },
+        );
+        app.notification.write(message.?, .info) catch {};
+        if (app.file_logger) |file_logger| file_logger.write(message.?, .info) catch {};
+    }
+
+    try app.repopulateDirectory("");
 }

@@ -20,6 +20,7 @@ const Config = struct {
     true_dir_size: bool = false,
     entry_dir: ?[]const u8 = null,
     archive_traversal_limit: usize = 100,
+    keep_partial_extraction: bool = false,
     styles: Styles = .{},
     keybinds: Keybinds = .{},
 
@@ -212,6 +213,7 @@ pub const Keybinds = struct {
     force_delete: ?Char = null,
     paste: ?Char = @enumFromInt('p'),
     yank: ?Char = @enumFromInt('y'),
+    extract_archive: ?Char = @enumFromInt('x'),
 };
 
 const Styles = struct {
