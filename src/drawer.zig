@@ -19,11 +19,6 @@ const Drawer = @This();
 const top_div: u16 = 1;
 const info_div: u16 = 1;
 
-// Used to detect whether to re-render an image.
-current_item_path_buf: [std.fs.max_path_bytes]u8 = undefined,
-current_item_path: []u8 = "",
-last_item_path_buf: [std.fs.max_path_bytes]u8 = undefined,
-last_item_path: []u8 = "",
 file_info_buf: [std.fs.max_path_bytes]u8 = undefined,
 file_name_buf: [std.fs.max_path_bytes + 2]u8 = undefined, // +2 to accomodate for [<file_name>]
 git_branch: [1024]u8 = undefined,
@@ -64,7 +59,7 @@ pub fn draw(self: *Drawer, app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
 
     if (config.preview_file) {
         const file_name_bar = try self.drawFileName(&app.directories, win);
-        try self.drawFilePreview(app, win, file_name_bar);
+        try drawFilePreview(app, win, file_name_bar);
     }
 
     const input = app.readInput();
@@ -98,7 +93,6 @@ fn drawFileName(
 }
 
 fn drawFilePreview(
-    self: *Drawer,
     app: *App,
     win: vaxis.Window,
     file_name_win: vaxis.Window,
@@ -119,40 +113,8 @@ fn drawFilePreview(
         if (entry) |e| break :lbl e else return;
     };
 
-    @memcpy(&self.last_item_path_buf, &self.current_item_path_buf);
-    self.last_item_path = self.last_item_path_buf[0..self.current_item_path.len];
-    self.current_item_path = try std.fmt.bufPrint(
-        &self.current_item_path_buf,
-        "{s}/{s}",
-        .{ app.directories.fullPath(".") catch {
-            const message = try std.fmt.allocPrint(app.alloc, "Can not display file - unable to retrieve directory path.", .{});
-            defer app.alloc.free(message);
-            app.notification.write(message, .err) catch {};
-            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-            _ = preview_win.print(&.{
-                .{ .text = "Can not display file - unable to retrieve directory path. No preview available." },
-            }, .{});
-            return;
-        }, entry.name },
-    );
-
     switch (entry.kind) {
         .directory => {
-            app.directories.clearChildEntries();
-            app.directories.populateChildEntries(entry.name) catch |err| {
-                const message = try std.fmt.allocPrint(app.alloc, "Failed to populate child directory entries - {}.", .{err});
-                defer app.alloc.free(message);
-                app.notification.write(message, .err) catch {};
-                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-                _ = preview_win.print(&.{
-                    .{ .text = "Failed to populate child directory entries. No preview available." },
-                }, .{});
-
-                return;
-            };
-
             for (app.directories.child_entries.all(), 0..) |item, i| {
                 if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
                     continue;
@@ -164,35 +126,6 @@ fn drawFilePreview(
             }
         },
         .file => file: {
-            var file = app.directories.dir.openFile(
-                entry.name,
-                .{ .mode = .read_only },
-            ) catch |err| {
-                const message = try std.fmt.allocPrint(app.alloc, "Failed to open file - {}.", .{err});
-                defer app.alloc.free(message);
-                app.notification.write(message, .err) catch {};
-                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-                _ = preview_win.print(&.{
-                    .{ .text = "Failed to open file. No preview available." },
-                }, .{});
-
-                break :file;
-            };
-            defer file.close();
-            const bytes = file.readAll(&app.directories.file_contents) catch |err| {
-                const message = try std.fmt.allocPrint(app.alloc, "Failed to read file contents - {}.", .{err});
-                defer app.alloc.free(message);
-                app.notification.write(message, .err) catch {};
-                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-                _ = preview_win.print(&.{
-                    .{ .text = "Failed to read file contents. No preview available." },
-                }, .{});
-
-                break :file;
-            };
-
             // Handle image.
             if (config.show_images == true) unsupported: {
                 var match = false;
@@ -205,7 +138,7 @@ fn drawFilePreview(
                 app.images.mutex.lock();
                 defer app.images.mutex.unlock();
 
-                if (app.images.cache.getPtr(self.current_item_path)) |cache_entry| {
+                if (app.images.cache.getPtr(app.current_item_path)) |cache_entry| {
                     if (cache_entry.status == .processing) {
                         _ = preview_win.print(&.{
                             .{ .text = "Image still processing." },
@@ -235,7 +168,7 @@ fn drawFilePreview(
                         };
                     } else {
                         if (cache_entry.data == null) {
-                            const path = try app.alloc.dupe(u8, self.current_item_path);
+                            const path = try app.alloc.dupe(u8, app.current_item_path);
                             Image.processImage(app.alloc, app, path) catch {
                                 app.alloc.free(path);
                                 break :unsupported;
@@ -275,7 +208,7 @@ fn drawFilePreview(
                         .{ .text = "Processing image." },
                     }, .{});
 
-                    const path = try app.alloc.dupe(u8, self.current_item_path);
+                    const path = try app.alloc.dupe(u8, app.current_item_path);
                     Image.processImage(app.alloc, app, path) catch {
                         app.alloc.free(path);
                         break :unsupported;
@@ -295,7 +228,7 @@ fn drawFilePreview(
                         "0",
                         "-l",
                         "5",
-                        self.current_item_path,
+                        app.current_item_path,
                         "-",
                     },
                     .cwd_dir = app.directories.dir,
@@ -331,19 +264,21 @@ fn drawFilePreview(
                     app.archive_files = null;
                 }
 
-                app.archive_files = Archive.listArchiveContents(
-                    app.alloc,
-                    file,
-                    archive_type,
-                    config.archive_traversal_limit,
-                ) catch |err| {
-                    const message = try std.fmt.allocPrint(app.alloc, "Failed to read archive: {s}", .{@errorName(err)});
-                    defer app.alloc.free(message);
-                    app.notification.write(message, .err) catch {};
-                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                    _ = preview_win.print(&.{.{ .text = "Failed to read archive." }}, .{});
-                    break :file;
-                };
+                if (app.directories.file.handle) |file| {
+                    app.archive_files = Archive.listArchiveContents(
+                        app.alloc,
+                        file,
+                        archive_type,
+                        config.archive_traversal_limit,
+                    ) catch |err| {
+                        const message = try std.fmt.allocPrint(app.alloc, "Failed to read archive: {s}", .{@errorName(err)});
+                        defer app.alloc.free(message);
+                        app.notification.write(message, .err) catch {};
+                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                        _ = preview_win.print(&.{.{ .text = "Failed to read archive." }}, .{});
+                        break :file;
+                    };
+                }
 
                 if (config.sort_dirs) {
                     std.mem.sort([]const u8, app.archive_files.?.entries.items, {}, sort.string);
@@ -359,11 +294,14 @@ fn drawFilePreview(
             }
 
             // Handle utf-8.
-            if (std.unicode.utf8ValidateSlice(app.directories.file_contents[0..bytes])) {
-                _ = preview_win.print(&.{
-                    .{ .text = app.directories.file_contents[0..bytes] },
-                }, .{});
-                break :file;
+            if (app.directories.file.bytes_read > 0) {
+                const file_contents = app.directories.file.data[0..app.directories.file.bytes_read];
+                if (std.unicode.utf8ValidateSlice(file_contents)) {
+                    _ = preview_win.print(&.{
+                        .{ .text = file_contents },
+                    }, .{});
+                    break :file;
+                }
             }
 
             // Fallback to no preview.
@@ -371,7 +309,7 @@ fn drawFilePreview(
         },
         else => {
             _ = preview_win.print(&.{
-                vaxis.Segment{ .text = self.current_item_path },
+                vaxis.Segment{ .text = app.current_item_path },
             }, .{});
         },
     }

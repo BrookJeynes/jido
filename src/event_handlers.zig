@@ -11,6 +11,7 @@ const environment = @import("./environment.zig");
 const events = @import("./events.zig");
 
 const config = &@import("./config.zig").config;
+
 pub fn handleGlobalEvent(
     app: *App,
     event: App.Event,
@@ -128,8 +129,62 @@ pub fn handleNormalEvent(
                 switch (key.codepoint) {
                     '-', 'h', Key.left => try events.traverseLeft(app),
                     Key.enter, 'l', Key.right => try events.traverseRight(app),
-                    'j', Key.down => app.directories.entries.next(),
-                    'k', Key.up => app.directories.entries.previous(),
+                    'j', 'k', Key.down, Key.up => {
+                        switch (key.codepoint) {
+                            'j', Key.down => app.directories.entries.next(),
+                            'k', Key.up => app.directories.entries.previous(),
+                            else => {},
+                        }
+
+                        if (app.directories.entries.len() == 0 or !config.preview_file) return;
+                        const entry = (app.directories.getSelected() catch |err| {
+                            const message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
+                            defer app.alloc.free(message);
+                            app.notification.write(message, .err) catch {};
+                            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                            return;
+                        }) orelse return;
+
+                        switch (entry.kind) {
+                            .directory => {
+                                app.directories.clearChildEntries();
+                                app.directories.populateChildEntries(entry.name) catch |err| {
+                                    const message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
+                                    defer app.alloc.free(message);
+                                    app.notification.write(message, .err) catch {};
+                                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                                };
+                            },
+                            .file => {
+                                if (!std.mem.eql(u8, app.last_item_path, app.current_item_path)) {
+                                    if (app.directories.file.handle) |*previous_file| {
+                                        previous_file.close();
+                                    }
+
+                                    var file = app.directories.dir.openFile(
+                                        entry.name,
+                                        .{ .mode = .read_only },
+                                    ) catch |err| {
+                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to open file - {}.", .{err});
+                                        defer app.alloc.free(message);
+                                        app.notification.write("Failed to open file. No preview available.", .err) catch {};
+                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                                        return;
+                                    };
+                                    const bytes = file.readAll(&app.directories.file.data) catch |err| {
+                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to read file contents - {}.", .{err});
+                                        defer app.alloc.free(message);
+                                        app.notification.write("Failed to read file contents. No preview available.", .err) catch {};
+                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                                        return;
+                                    };
+                                    app.directories.file.handle = file;
+                                    app.directories.file.bytes_read = bytes;
+                                }
+                            },
+                            else => {},
+                        }
+                    },
                     'u' => try events.undo(app),
                     else => {},
                 }
