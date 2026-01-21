@@ -16,6 +16,7 @@ const FileLogger = @import("./file_logger.zig");
 const Image = @import("./image.zig");
 const List = @import("./list.zig").List;
 const Notification = @import("./notification.zig");
+const Preview = @import("./preview.zig");
 
 const config = &@import("./config.zig").config;
 const help_menu_items = [_][]const u8{
@@ -113,7 +114,14 @@ text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
 last_known_height: usize,
 
+// Used to detect whether to re-render an image.
+current_item_path_buf: [std.fs.max_path_bytes]u8 = undefined,
+current_item_path: []u8 = "",
+last_item_path_buf: [std.fs.max_path_bytes]u8 = undefined,
+last_item_path: []u8 = "",
+
 images: Image.Cache,
+preview_cache: Preview.PreviewCache,
 
 pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
     var vx = try vaxis.init(alloc, .{
@@ -139,6 +147,7 @@ pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
         .actions = CircStack(Action, actions_len).init(),
         .last_known_height = vx.window().height,
         .images = .{ .cache = .init(alloc) },
+        .preview_cache = Preview.PreviewCache.init(alloc),
     };
     app.tty = try vaxis.Tty.init(&app.tty_buffer);
     app.loop = vaxis.Loop(Event){
@@ -184,6 +193,7 @@ pub fn deinit(self: *App) void {
         img.value_ptr.deinit(self.alloc, self.vx, &self.tty);
     }
     self.images.cache.deinit();
+    self.preview_cache.deinit();
 }
 
 /// Reads the current text input without consuming it.
@@ -227,6 +237,27 @@ pub fn run(self: *App) !void {
     while (!self.should_quit) {
         self.loop.pollEvent();
         while (self.loop.tryEvent()) |event| {
+            if (self.directories.getSelected()) |entry| err: {
+                @memcpy(&self.last_item_path_buf, &self.current_item_path_buf);
+                self.last_item_path = self.last_item_path_buf[0..self.current_item_path.len];
+                self.current_item_path = try std.fmt.bufPrint(
+                    &self.current_item_path_buf,
+                    "{s}/{s}",
+                    .{ self.directories.fullPath(".") catch {
+                        const message = try std.fmt.allocPrint(self.alloc, "Can not display file - unable to retrieve directory path.", .{});
+                        defer self.alloc.free(message);
+                        self.notification.write(message, .err) catch {};
+                        if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                        break :err;
+                    }, entry.?.name },
+                );
+            } else |err| {
+                const message = try std.fmt.allocPrint(self.alloc, "Can not display file - {}", .{err});
+                defer self.alloc.free(message);
+                self.notification.write(message, .err) catch {};
+                if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+            }
+
             // Global keybinds.
             try EventHandlers.handleGlobalEvent(self, event);
 

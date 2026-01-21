@@ -14,7 +14,11 @@ const Self = @This();
 alloc: std.mem.Allocator,
 dir: std.fs.Dir,
 path_buf: [std.fs.max_path_bytes]u8 = undefined,
-file_contents: [4096]u8 = undefined,
+file: struct {
+    handle: ?std.fs.File = null,
+    data: [4096]u8 = undefined,
+    bytes_read: usize = 0,
+} = .{},
 pdf_contents: ?[]u8 = null,
 entries: List(std.fs.Dir.Entry),
 history: CircStack(usize, history_len),

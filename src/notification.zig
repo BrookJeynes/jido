@@ -30,9 +30,9 @@ pub fn write(self: *Self, text: []const u8, style: Style) !void {
     self.timer = std.time.timestamp();
     self.style = style;
 
-    if (self.loop) |loop| {
-        loop.postEvent(.notification);
-    }
+    // if (self.loop) |loop| {
+        // loop.postEvent(.notification);
+    // }
 }
 
 pub fn reset(self: *Self) void {
