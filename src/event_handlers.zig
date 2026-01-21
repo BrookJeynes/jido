@@ -1,14 +1,16 @@
 const std = @import("std");
-const App = @import("./app.zig");
-const environment = @import("./environment.zig");
-const zuid = @import("zuid");
+
 const vaxis = @import("vaxis");
 const Key = vaxis.Key;
-const config = &@import("./config.zig").config;
+const zuid = @import("zuid");
+
+const App = @import("./app.zig");
 const commands = @import("./commands.zig");
 const Keybinds = @import("./config.zig").Keybinds;
+const environment = @import("./environment.zig");
 const events = @import("./events.zig");
 
+const config = &@import("./config.zig").config;
 pub fn handleGlobalEvent(
     app: *App,
     event: App.Event,

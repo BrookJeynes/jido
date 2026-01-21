@@ -1,6 +1,7 @@
 const std = @import("std");
-const zuid = @import("zuid");
 const builtin = @import("builtin");
+
+const zuid = @import("zuid");
 
 pub fn getHomeDir() !?std.fs.Dir {
     return try std.fs.openDirAbsolute(std.posix.getenv("HOME") orelse {

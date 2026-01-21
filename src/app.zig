@@ -1,21 +1,23 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const environment = @import("./environment.zig");
-const Drawer = @import("./drawer.zig");
-const Notification = @import("./notification.zig");
-const config = &@import("./config.zig").config;
-const List = @import("./list.zig").List;
-const Directories = @import("./directories.zig");
-const FileLogger = @import("./file_logger.zig");
-const CircStack = @import("./circ_stack.zig").CircularStack;
-const Image = @import("./image.zig");
-const Archive = @import("./archive.zig");
-const zuid = @import("zuid");
+
 const vaxis = @import("vaxis");
 const Key = vaxis.Key;
-const EventHandlers = @import("./event_handlers.zig");
-const CommandHistory = @import("./commands.zig").CommandHistory;
+const zuid = @import("zuid");
 
+const Archive = @import("./archive.zig");
+const CircStack = @import("./circ_stack.zig").CircularStack;
+const CommandHistory = @import("./commands.zig").CommandHistory;
+const Directories = @import("./directories.zig");
+const Drawer = @import("./drawer.zig");
+const environment = @import("./environment.zig");
+const EventHandlers = @import("./event_handlers.zig");
+const FileLogger = @import("./file_logger.zig");
+const Image = @import("./image.zig");
+const List = @import("./list.zig").List;
+const Notification = @import("./notification.zig");
+
+const config = &@import("./config.zig").config;
 const help_menu_items = [_][]const u8{
     "Global:",
     "<CTRL-c>           :Exit.",

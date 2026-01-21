@@ -1,17 +1,19 @@
 const std = @import("std");
-const App = @import("./app.zig");
-const FileLogger = @import("./file_logger.zig");
-const Notification = @import("./notification.zig");
-const Directories = @import("./directories.zig");
-const config = &@import("./config.zig").config;
-const vaxis = @import("vaxis");
-const sort = @import("./sort.zig");
-const Git = @import("./git.zig");
-const List = @import("./list.zig").List;
-const zeit = @import("zeit");
-const Image = @import("./image.zig");
-const Archive = @import("./archive.zig");
 
+const vaxis = @import("vaxis");
+const zeit = @import("zeit");
+
+const App = @import("./app.zig");
+const Archive = @import("./archive.zig");
+const Directories = @import("./directories.zig");
+const FileLogger = @import("./file_logger.zig");
+const Git = @import("./git.zig");
+const Image = @import("./image.zig");
+const List = @import("./list.zig").List;
+const Notification = @import("./notification.zig");
+const sort = @import("./sort.zig");
+
+const config = &@import("./config.zig").config;
 const Drawer = @This();
 
 const top_div: u16 = 1;

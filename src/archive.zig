@@ -1,5 +1,6 @@
-const std = @import("std");
 const ascii = @import("std").ascii;
+const std = @import("std");
+
 const FileLogger = @import("./file_logger.zig");
 
 const archive_buf_size = 8192;
