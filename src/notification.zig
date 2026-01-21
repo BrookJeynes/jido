@@ -1,7 +1,8 @@
 const std = @import("std");
-const vaxis = @import("vaxis");
-const Event = @import("app.zig").Event;
 
+const vaxis = @import("vaxis");
+
+const Event = @import("app.zig").Event;
 const FileLogger = @import("file_logger.zig");
 
 const Self = @This();

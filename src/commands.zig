@@ -1,6 +1,8 @@
 const std = @import("std");
+
 const App = @import("app.zig");
 const environment = @import("environment.zig");
+
 const user_config = &@import("./config.zig").config;
 
 pub const CommandHistory = struct {

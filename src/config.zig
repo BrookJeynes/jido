@@ -1,10 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const environment = @import("./environment.zig");
+
 const vaxis = @import("vaxis");
-const FileLogger = @import("file_logger.zig");
-const Notification = @import("./notification.zig");
+
 const App = @import("./app.zig");
+const environment = @import("./environment.zig");
+const Notification = @import("./notification.zig");
+const FileLogger = @import("file_logger.zig");
 
 const CONFIG_NAME = "config.json";
 const TRASH_DIR_NAME = "trash";

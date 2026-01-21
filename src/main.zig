@@ -1,13 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
+
 const options = @import("options");
+const vaxis = @import("vaxis");
+pub const panic = vaxis.panic_handler;
+
+const resolvePath = @import("./commands.zig").resolvePath;
 const App = @import("app.zig");
 const FileLogger = @import("file_logger.zig");
-const vaxis = @import("vaxis");
-const config = &@import("./config.zig").config;
-const resolvePath = @import("./commands.zig").resolvePath;
 
-pub const panic = vaxis.panic_handler;
+const config = &@import("./config.zig").config;
 const help_menu =
     \\Usage: jido
     \\

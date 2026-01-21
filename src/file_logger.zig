@@ -1,5 +1,7 @@
 const std = @import("std");
+
 const environment = @import("environment.zig");
+
 const config = &@import("./config.zig").config;
 
 pub const LOG_PATH = "log.txt";

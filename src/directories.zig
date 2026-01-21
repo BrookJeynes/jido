@@ -1,9 +1,12 @@
 const std = @import("std");
-const List = @import("./list.zig").List;
-const CircStack = @import("./circ_stack.zig").CircularStack;
-const config = &@import("./config.zig").config;
+
 const fuzzig = @import("fuzzig");
 
+const CircStack = @import("./circ_stack.zig").CircularStack;
+const List = @import("./list.zig").List;
+
+const sort = &@import("./sort.zig");
+const config = &@import("./config.zig").config;
 const history_len: usize = 100;
 
 const Self = @This();
@@ -119,7 +122,7 @@ pub fn populateChildEntries(
     }
 
     if (config.sort_dirs == true) {
-        std.mem.sort([]const u8, self.child_entries.all(), {}, sortChildEntry);
+        std.mem.sort([]const u8, self.child_entries.all(), {}, sort.string);
     }
 }
 
@@ -142,16 +145,8 @@ pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
     }
 
     if (config.sort_dirs == true) {
-        std.mem.sort(std.fs.Dir.Entry, self.entries.all(), {}, sortEntry);
+        std.mem.sort(std.fs.Dir.Entry, self.entries.all(), {}, sort.sortDirectoryEntry);
     }
-}
-
-fn sortEntry(_: void, lhs: std.fs.Dir.Entry, rhs: std.fs.Dir.Entry) bool {
-    return std.mem.lessThan(u8, lhs.name, rhs.name);
-}
-
-fn sortChildEntry(_: void, lhs: []const u8, rhs: []const u8) bool {
-    return std.mem.lessThan(u8, lhs, rhs);
 }
 
 pub fn clearEntries(self: *Self) void {
