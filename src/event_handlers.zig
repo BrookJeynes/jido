@@ -120,6 +120,7 @@ pub fn handleNormalEvent(
                     .force_delete => try events.forceDelete(app),
                     .yank => try events.yank(app),
                     .paste => try events.paste(app),
+                    .extract_archive => try events.extractArchive(app),
                 }
             } else {
                 switch (key.codepoint) {
@@ -207,6 +208,11 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
 
                                 if (std.mem.eql(u8, command, ":h")) {
                                     app.state = .help_menu;
+                                    break :supported;
+                                }
+
+                                if (std.mem.eql(u8, command, ":extract")) {
+                                    try events.extractArchive(app);
                                     break :supported;
                                 }
 

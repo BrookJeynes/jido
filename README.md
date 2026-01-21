@@ -57,6 +57,7 @@ d                  :Create directory. Will enter input mode.
 v                  :Verbose mode. Provides more information about selected entry. 
 y                  :Yank selected item. 
 p                  :Past yanked item. 
+x                  :Extract archive to `<name>/`.
 
 Input mode:
 <Esc>              :Cancel input.
@@ -70,6 +71,7 @@ Command mode:
 :trash             :Navigate to trash directory if it exists.
 :empty_trash       :Empty trash if it exists. This action cannot be undone.
 :cd <path>         :Change directory via path. Will enter input mode.
+:extract           :Extract archive under cursor.
 ```
 
 ## Configuration
@@ -87,18 +89,20 @@ Config schema:
 Config = struct {
     .show_hidden: bool = true,
     .sort_dirs:   bool = true,
-    .show_images: bool = true,             -- Images are only supported in a terminal
-                                              supporting the `kitty image protocol`.
+    .show_images: bool = true,              -- Images are only supported in a terminal
+                                               supporting the `kitty image protocol`.
     .preview_file: bool = true,
-    .empty_trash_on_exit: bool = false,    -- Emptying the trash permanently deletes
-                                              all files within the trash. These
-                                              files are not recoverable past this
-                                              point.
-    .true_dir_size: bool = false,          -- Display size of directory including
-                                              all its children. This can and will
-                                              cause lag on deeply nested directories.
-    .archive_traversal_limit: usize = 100, -- How many files to be traversed when reading
-                                              an archive (zip, tar, etc.).
+    .empty_trash_on_exit: bool = false,     -- Emptying the trash permanently deletes
+                                               all files within the trash. These
+                                               files are not recoverable past this
+                                               point.
+    .true_dir_size: bool = false,           -- Display size of directory including
+                                               all its children. This can and will
+                                               cause lag on deeply nested directories.
+    .archive_traversal_limit: usize = 100,  -- How many files to be traversed when reading
+                                               an archive (zip, tar, etc.).
+    .keep_partial_extraction: bool = false, -- If extraction fails, keep the partial
+                                               extracted directory instead of cleaning up.
     .keybinds: Keybinds,
     .styles: Styles
 }
@@ -119,6 +123,7 @@ Keybinds = struct {
                                                         not recoverable
     .yank: ?Char = 'y'
     .paste: ?Char = 'p'
+    .extract_archive: ?Char = 'x'
 }
 
 NotificationStyles = struct {

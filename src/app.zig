@@ -42,6 +42,7 @@ const help_menu_items = [_][]const u8{
     "v                  :Verbose mode. Provides more information about selected entry. ",
     "y                  :Yank selected item.",
     "p                  :Past yanked item.",
+    "x                  :Extract archive to `<name>/`",
     "",
     "Input mode:",
     "<Esc>              :Cancel input.",
@@ -55,6 +56,7 @@ const help_menu_items = [_][]const u8{
     ":trash             :Navigate to trash directory if it exists.",
     ":empty_trash       :Empty trash if it exists. This action cannot be undone.",
     ":cd <path>         :Change directory via path. Will enter input mode.",
+    ":extract           :Extract archive under cursor.",
 };
 
 pub const State = enum {
