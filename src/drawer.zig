@@ -11,6 +11,8 @@ const Git = @import("./git.zig");
 const Image = @import("./image.zig");
 const List = @import("./list.zig").List;
 const Notification = @import("./notification.zig");
+const path_utils = @import("./path_utils.zig");
+const Preview = @import("./preview.zig");
 const sort = @import("./sort.zig");
 
 const config = &@import("./config.zig").config;
@@ -113,204 +115,88 @@ fn drawFilePreview(
         if (entry) |e| break :lbl e else return;
     };
 
-    switch (entry.kind) {
-        .directory => {
-            for (app.directories.child_entries.all(), 0..) |item, i| {
+    const clean_name = path_utils.getCleanName(entry);
+    const abs_path = app.directories.fullPath(clean_name) catch {
+        _ = preview_win.print(&.{.{ .text = "Unable to get file path." }}, .{});
+        return;
+    };
+
+    const preview_data = app.preview_cache.get(abs_path);
+    if (preview_data == null) {
+        _ = preview_win.print(&.{.{ .text = "Loading preview..." }}, .{});
+        return;
+    }
+
+    switch (preview_data.?.*) {
+        .none => {
+            _ = preview_win.print(&.{.{ .text = "No preview available." }}, .{});
+        },
+        .text, .pdf => |text| {
+            _ = preview_win.print(&.{.{ .text = text }}, .{});
+        },
+        .directory => |entries| {
+            for (entries.items, 0..) |item, i| {
                 if (std.mem.startsWith(u8, item, ".") and config.show_hidden == false) {
                     continue;
                 }
-                if (i > preview_win.height) continue;
+                if (i >= preview_win.height) break;
                 const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
                 w.fill(vaxis.Cell{ .style = config.styles.list_item });
                 _ = w.print(&.{.{ .text = item, .style = config.styles.list_item }}, .{});
             }
         },
-        .file => file: {
-            // Handle image.
-            if (config.show_images == true) unsupported: {
-                var match = false;
-                inline for (@typeInfo(vaxis.zigimg.Image.Format).@"enum".fields) |field| {
-                    const entry_ext = std.mem.trimLeft(u8, std.fs.path.extension(entry.name), ".");
-                    if (std.mem.eql(u8, entry_ext, field.name)) match = true;
-                }
-                if (!match) break :unsupported;
-
-                app.images.mutex.lock();
-                defer app.images.mutex.unlock();
-
-                if (app.images.cache.getPtr(app.current_item_path)) |cache_entry| {
-                    if (cache_entry.status == .processing) {
-                        _ = preview_win.print(&.{
-                            .{ .text = "Image still processing." },
-                        }, .{});
-                        break :file;
-                    }
-
-                    if (cache_entry.status == .failed) {
-                        _ = preview_win.print(&.{
-                            .{ .text = "Failed to process image." },
-                        }, .{});
-                        break :file;
-                    }
-
-                    if (cache_entry.image) |img| {
-                        img.draw(preview_win, .{ .scale = .contain }) catch |err| {
-                            const message = try std.fmt.allocPrint(app.alloc, "Failed to draw image to screen - {}.", .{err});
-                            defer app.alloc.free(message);
-                            app.notification.write(message, .err) catch {};
-                            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-                            _ = preview_win.print(&.{
-                                .{ .text = "Failed to draw image to screen. No preview available." },
-                            }, .{});
-                            cache_entry.image = null;
-                            break :file;
-                        };
-                    } else {
-                        if (cache_entry.data == null) {
-                            const path = try app.alloc.dupe(u8, app.current_item_path);
-                            Image.processImage(app.alloc, app, path) catch {
-                                app.alloc.free(path);
-                                break :unsupported;
-                            };
-                            _ = preview_win.print(&.{
-                                .{ .text = "Image still processing." },
-                            }, .{});
-                            break :file;
-                        }
-
-                        if (app.vx.transmitImage(app.alloc, app.tty.writer(), &cache_entry.data.?, .rgba)) |img| {
-                            img.draw(preview_win, .{ .scale = .contain }) catch |err| {
-                                const message = try std.fmt.allocPrint(app.alloc, "Failed to draw image to screen - {}.", .{err});
-                                defer app.alloc.free(message);
-                                app.notification.write(message, .err) catch {};
-                                if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-
-                                _ = preview_win.print(&.{
-                                    .{ .text = "Failed to draw image to screen. No preview available." },
-                                }, .{});
-                                break :file;
-                            };
-                            cache_entry.image = img;
-                            if (cache_entry.data) |data| {
-                                var d = data;
-                                d.deinit(app.alloc);
-                            }
-                            cache_entry.data = null;
-                        } else |_| {
-                            break :unsupported;
-                        }
-                    }
-
-                    break :file;
-                } else {
-                    _ = preview_win.print(&.{
-                        .{ .text = "Processing image." },
-                    }, .{});
-
-                    const path = try app.alloc.dupe(u8, app.current_item_path);
-                    Image.processImage(app.alloc, app, path) catch {
-                        app.alloc.free(path);
-                        break :unsupported;
-                    };
-                }
-
-                break :file;
+        .archive => |entries| {
+            for (entries.items, 0..) |item, i| {
+                if (i >= preview_win.height) break;
+                const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
+                w.fill(vaxis.Cell{ .style = config.styles.list_item });
+                _ = w.print(&.{.{ .text = item, .style = config.styles.list_item }}, .{});
             }
-
-            // Handle pdf.
-            if (std.mem.eql(u8, std.fs.path.extension(entry.name), ".pdf")) {
-                const output = std.process.Child.run(.{
-                    .allocator = app.alloc,
-                    .argv = &[_][]const u8{
-                        "pdftotext",
-                        "-f",
-                        "0",
-                        "-l",
-                        "5",
-                        app.current_item_path,
-                        "-",
-                    },
-                    .cwd_dir = app.directories.dir,
-                }) catch {
-                    _ = preview_win.print(&.{.{
-                        .text = "No preview available. Install pdftotext to get PDF previews.",
-                    }}, .{});
-                    break :file;
-                };
-                defer app.alloc.free(output.stderr);
-                defer app.alloc.free(output.stdout);
-
-                if (output.term.Exited != 0) {
-                    _ = preview_win.print(&.{.{
-                        .text = "No preview available. Install pdftotext to get PDF previews.",
-                    }}, .{});
-                    break :file;
-                }
-
-                if (app.directories.pdf_contents) |contents| app.alloc.free(contents);
-                app.directories.pdf_contents = try app.alloc.dupe(u8, output.stdout);
-
-                _ = preview_win.print(&.{
-                    .{ .text = app.directories.pdf_contents.? },
-                }, .{});
-                break :file;
-            }
-
-            // Handle archives
-            if (Archive.ArchiveType.fromPath(entry.name)) |archive_type| {
-                if (app.archive_files) |*files| {
-                    files.deinit(app.alloc);
-                    app.archive_files = null;
-                }
-
-                if (app.directories.file.handle) |file| {
-                    app.archive_files = Archive.listArchiveContents(
-                        app.alloc,
-                        file,
-                        archive_type,
-                        config.archive_traversal_limit,
-                    ) catch |err| {
-                        const message = try std.fmt.allocPrint(app.alloc, "Failed to read archive: {s}", .{@errorName(err)});
-                        defer app.alloc.free(message);
-                        app.notification.write(message, .err) catch {};
-                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                        _ = preview_win.print(&.{.{ .text = "Failed to read archive." }}, .{});
-                        break :file;
-                    };
-                }
-
-                if (config.sort_dirs) {
-                    std.mem.sort([]const u8, app.archive_files.?.entries.items, {}, sort.string);
-                }
-
-                for (app.archive_files.?.entries.items, 0..) |path, i| {
-                    if (i >= preview_win.height) break;
-                    const w = preview_win.child(.{ .y_off = @intCast(i), .height = 1 });
-                    w.fill(vaxis.Cell{ .style = config.styles.list_item });
-                    _ = w.print(&.{.{ .text = path, .style = config.styles.list_item }}, .{});
-                }
-                break :file;
-            }
-
-            // Handle utf-8.
-            if (app.directories.file.bytes_read > 0) {
-                const file_contents = app.directories.file.data[0..app.directories.file.bytes_read];
-                if (std.unicode.utf8ValidateSlice(file_contents)) {
-                    _ = preview_win.print(&.{
-                        .{ .text = file_contents },
-                    }, .{});
-                    break :file;
-                }
-            }
-
-            // Fallback to no preview.
-            _ = preview_win.print(&.{.{ .text = "No preview available." }}, .{});
         },
-        else => {
-            _ = preview_win.print(&.{
-                vaxis.Segment{ .text = app.current_item_path },
-            }, .{});
+        .image => |img_info| {
+            if (!config.show_images) {
+                _ = preview_win.print(&.{.{ .text = "Image preview disabled." }}, .{});
+                return;
+            }
+
+            app.images.mutex.lock();
+            defer app.images.mutex.unlock();
+
+            if (app.images.cache.getPtr(img_info.cache_path)) |cache_entry| {
+                switch (cache_entry.status) {
+                    .processing => {
+                        _ = preview_win.print(&.{.{ .text = "Image still processing..." }}, .{});
+                    },
+                    .failed => {
+                        _ = preview_win.print(&.{.{ .text = "Failed to process image." }}, .{});
+                    },
+                    .ready => {
+                        if (cache_entry.image) |image| {
+                            image.draw(preview_win, .{ .scale = .contain }) catch {
+                                _ = preview_win.print(&.{.{ .text = "Failed to draw image." }}, .{});
+                                return;
+                            };
+                        } else if (cache_entry.data) |*data| {
+                            if (app.vx.transmitImage(app.alloc, app.tty.writer(), data, .rgba)) |image| {
+                                image.draw(preview_win, .{ .scale = .contain }) catch {
+                                    _ = preview_win.print(&.{.{ .text = "Failed to draw image." }}, .{});
+                                    return;
+                                };
+                                cache_entry.image = image;
+                                var d = data.*;
+                                d.deinit(app.alloc);
+                                cache_entry.data = null;
+                            } else |_| {
+                                _ = preview_win.print(&.{.{ .text = "Failed to transmit image." }}, .{});
+                            }
+                        } else {
+                            _ = preview_win.print(&.{.{ .text = "Image processing..." }}, .{});
+                        }
+                    },
+                }
+            } else {
+                _ = preview_win.print(&.{.{ .text = "Image not found in cache." }}, .{});
+            }
         },
     }
 }
@@ -355,7 +241,8 @@ fn drawFileInfo(
         if (entry.kind == .directory) {
             maybe_meta = directories.dir.stat() catch break :lbl;
         } else if (entry.kind == .file) {
-            var file = directories.dir.openFile(entry.name, .{}) catch break :lbl;
+            const clean_name = path_utils.getCleanName(entry);
+            var file = directories.dir.openFile(clean_name, .{}) catch break :lbl;
             maybe_meta = file.stat() catch break :lbl;
         }
 
@@ -395,7 +282,8 @@ fn drawFileInfo(
             "r--", "r-x", "rw-", "rwx",
         };
 
-        const stat = directories.dir.statFile(entry.name) catch {
+        const clean_name = path_utils.getCleanName(entry);
+        const stat = directories.dir.statFile(clean_name) catch {
             _ = try file_perm_fbs.write("---------\n");
             break :lbl 10;
         };
@@ -424,13 +312,14 @@ fn drawFileInfo(
 
     // Size.
     const size: ?usize = lbl: {
-        const stat = directories.dir.statFile(entry.name) catch break :lbl null;
+        const clean_name = path_utils.getCleanName(entry);
+        const stat = directories.dir.statFile(clean_name) catch break :lbl null;
         if (entry.kind == .file) {
             break :lbl stat.size;
         } else if (entry.kind == .directory) {
             if (config.true_dir_size) {
                 var dir = directories.dir.openDir(
-                    entry.name,
+                    clean_name,
                     .{ .iterate = true },
                 ) catch break :lbl null;
                 defer dir.close();

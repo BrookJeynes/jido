@@ -6,6 +6,8 @@ const zuid = @import("zuid");
 const App = @import("./app.zig");
 const Archive = @import("./archive.zig");
 const environment = @import("./environment.zig");
+const path_utils = @import("./path_utils.zig");
+const Preview = @import("./preview.zig");
 
 const config = &@import("./config.zig").config;
 
@@ -17,9 +19,10 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         app.notification.write("Can not to delete item - no item selected.", .warn) catch {};
         return;
     }) orelse return;
+    const clean_name = path_utils.getCleanName(entry);
 
     var prev_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const prev_path = app.directories.dir.realpath(entry.name, &prev_path_buf) catch {
+    const prev_path = app.directories.dir.realpath(clean_name, &prev_path_buf) catch {
         message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - unable to retrieve absolute path.", .{entry.name});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -53,8 +56,8 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         return;
     }
 
-    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{f}", .{ trash_dir_path, entry.name, zuid.new.v4() });
-    if (app.directories.dir.rename(entry.name, tmp_path)) {
+    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{f}", .{ trash_dir_path, clean_name, zuid.new.v4() });
+    if (app.directories.dir.rename(clean_name, tmp_path)) {
         if (app.actions.push(.{
             .delete = .{ .prev_path = prev_path_alloc, .new_path = tmp_path },
         })) |prev_elem| {
@@ -65,6 +68,7 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         app.notification.write(message.?, .info) catch {};
 
         app.directories.removeSelected();
+        Preview.loadPreviewForCurrentEntry(app) catch {};
     } else |err| {
         app.alloc.free(prev_path_alloc);
         app.alloc.free(tmp_path);
@@ -115,7 +119,35 @@ pub fn rename(app: *App) error{OutOfMemory}!void {
             app.alloc.free(prev_elem.rename.new_path);
         }
 
-        try app.repopulateDirectory("");
+        app.directories.clearEntries();
+        app.directories.populateEntries("") catch |err| {
+            const m = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
+            defer app.alloc.free(m);
+            app.notification.write(m, .err) catch {};
+            if (app.file_logger) |file_logger| file_logger.write(m, .err) catch {};
+        };
+
+        const target_name = if (entry.kind == .directory)
+            try std.fmt.allocPrint(app.alloc, "{s}/", .{new_path})
+        else
+            new_path;
+        defer if (entry.kind == .directory) app.alloc.free(target_name);
+
+        for (app.directories.entries.all(), 0..) |e, i| {
+            if (std.mem.eql(u8, e.name, target_name)) {
+                app.directories.entries.selected = i;
+                break;
+            }
+        }
+
+        // No need to revalidate cache as we're viewing the same file
+        Preview.loadPreviewForCurrentEntry(app) catch |err| {
+            if (app.file_logger) |file_logger| {
+                const msg = std.fmt.allocPrint(app.alloc, "Failed to load preview after repopulate: {}", .{err}) catch return;
+                defer app.alloc.free(msg);
+                file_logger.write(msg, .err) catch {};
+            }
+        };
 
         message = try std.fmt.allocPrint(app.alloc, "Renamed '{s}' to '{s}'.", .{ entry.name, new_path });
         app.notification.write(message.?, .info) catch {};
@@ -140,24 +172,8 @@ pub fn forceDelete(app: *App) error{OutOfMemory}!void {
 pub fn toggleHiddenFiles(app: *App) error{OutOfMemory}!void {
     config.show_hidden = !config.show_hidden;
 
-    const prev_selected_name: []const u8, const prev_selected_err: bool = lbl: {
-        const selected = app.directories.getSelected() catch break :lbl .{ "", true };
-        if (selected == null) break :lbl .{ "", true };
-
-        break :lbl .{ try app.alloc.dupe(u8, selected.?.name), false };
-    };
-    defer if (!prev_selected_err) app.alloc.free(prev_selected_name);
-
     try app.repopulateDirectory("");
     app.text_input.clearAndFree();
-
-    for (app.directories.entries.all()) |entry| {
-        if (std.mem.eql(u8, entry.name, prev_selected_name)) return;
-        app.directories.entries.selected += 1;
-    }
-
-    // If it didn't find entry, reset selected.
-    app.directories.entries.selected = 0;
 }
 
 pub fn yank(app: *App) error{OutOfMemory}!void {
@@ -497,8 +513,6 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
         return;
     };
 
-    const selected = app.directories.entries.selected;
-
     switch (action) {
         .delete => |a| {
             defer app.alloc.free(a.new_path);
@@ -518,9 +532,6 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
-
-            try app.repopulateDirectory("");
-            app.text_input.clearAndFree();
 
             message = try std.fmt.allocPrint(app.alloc, "Restored '{s}' as '{s}'.", .{ a.prev_path, new_path_res.path });
             app.notification.write(message.?, .info) catch {};
@@ -544,9 +555,6 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
                 return;
             };
 
-            try app.repopulateDirectory("");
-            app.text_input.clearAndFree();
-
             message = try std.fmt.allocPrint(app.alloc, "Reverted renaming of '{s}', now '{s}'.", .{ a.new_path, new_path_res.path });
             app.notification.write(message.?, .info) catch {};
         },
@@ -559,13 +567,11 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
-
-            try app.repopulateDirectory("");
-            app.text_input.clearAndFree();
         },
     }
 
-    app.directories.entries.selected = selected;
+    try app.repopulateDirectory("");
+    app.text_input.clearAndFree();
 }
 
 pub fn extractArchive(app: *App) error{OutOfMemory}!void {
