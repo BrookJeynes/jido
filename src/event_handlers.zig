@@ -9,6 +9,7 @@ const commands = @import("./commands.zig");
 const Keybinds = @import("./config.zig").Keybinds;
 const environment = @import("./environment.zig");
 const events = @import("./events.zig");
+const Preview = @import("./preview.zig");
 
 const config = &@import("./config.zig").config;
 
@@ -93,7 +94,6 @@ pub fn handleNormalEvent(
                         app.text_input.insertSliceAtCursor(entry.name) catch {};
                         app.state = .rename;
                     },
-
                     .create_dir => {
                         try app.repopulateDirectory("");
                         app.text_input.clearAndFree();
@@ -117,8 +117,16 @@ pub fn handleNormalEvent(
                         app.text_input.insertSliceAtCursor(":") catch {};
                         app.state = .command;
                     },
-                    .jump_bottom => app.directories.entries.selectLast(),
-                    .jump_top => app.directories.entries.selectFirst(),
+                    .jump_bottom => {
+                        app.directories.entries.selectLast();
+                        app.preview_cache.invalidate();
+                        Preview.loadPreviewForCurrentEntry(app) catch {};
+                    },
+                    .jump_top => {
+                        app.directories.entries.selectFirst();
+                        app.preview_cache.invalidate();
+                        Preview.loadPreviewForCurrentEntry(app) catch {};
+                    },
                     .toggle_verbose_file_information => app.drawer.verbose = !app.drawer.verbose,
                     .force_delete => try events.forceDelete(app),
                     .yank => try events.yank(app),
@@ -129,65 +137,13 @@ pub fn handleNormalEvent(
                 switch (key.codepoint) {
                     '-', 'h', Key.left => try events.traverseLeft(app),
                     Key.enter, 'l', Key.right => try events.traverseRight(app),
-                    'j', 'k', Key.down, Key.up => {
-                        switch (key.codepoint) {
-                            'j', Key.down => app.directories.entries.next(),
-                            'k', Key.up => app.directories.entries.previous(),
-                            else => {},
-                        }
-
-                        if (app.directories.entries.len() == 0 or !config.preview_file) return;
-                        const entry = (app.directories.getSelected() catch |err| {
-                            const message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
-                            defer app.alloc.free(message);
-                            app.notification.write(message, .err) catch {};
-                            if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                            return;
-                        }) orelse return;
-
-                        switch (entry.kind) {
-                            .directory => {
-                                app.directories.clearChildEntries();
-                                app.directories.populateChildEntries(entry.name) catch |err| {
-                                    const message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
-                                    defer app.alloc.free(message);
-                                    app.notification.write(message, .err) catch {};
-                                    if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                                };
-                            },
-                            .file => {
-                                if (!std.mem.eql(u8, app.last_item_path, app.current_item_path)) {
-                                    if (app.directories.file.handle) |*previous_file| {
-                                        previous_file.close();
-                                    }
-
-                                    var file = app.directories.dir.openFile(
-                                        entry.name,
-                                        .{ .mode = .read_only },
-                                    ) catch |err| {
-                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to open file - {}.", .{err});
-                                        defer app.alloc.free(message);
-                                        app.notification.write("Failed to open file. No preview available.", .err) catch {};
-                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                                        return;
-                                    };
-                                    const bytes = file.readAll(&app.directories.file.data) catch |err| {
-                                        const message = try std.fmt.allocPrint(app.alloc, "Failed to read file contents - {}.", .{err});
-                                        defer app.alloc.free(message);
-                                        app.notification.write("Failed to read file contents. No preview available.", .err) catch {};
-                                        if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
-                                        return;
-                                    };
-                                    app.directories.file.handle = file;
-                                    app.directories.file.bytes_read = bytes;
-                                }
-                            },
-                            else => {},
-                        }
-                    },
+                    'j', Key.down => app.directories.entries.next(),
+                    'k', Key.up => app.directories.entries.previous(),
                     'u' => try events.undo(app),
                     else => {},
                 }
+                app.preview_cache.invalidate();
+                Preview.loadPreviewForCurrentEntry(app) catch {};
             }
         },
         .image_ready => {},
@@ -214,7 +170,6 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                     app.state = .normal;
                 },
                 Key.enter => {
-                    const selected = app.directories.entries.selected;
                     switch (app.state) {
                         .new_dir => try events.createNewDir(app),
                         .new_file => try events.createNewFile(app),
@@ -282,7 +237,6 @@ pub fn handleInputEvent(app: *App, event: App.Event) !void {
                     }
 
                     if (app.state != .help_menu) app.state = .normal;
-                    app.directories.entries.selected = selected;
                 },
                 Key.up => {
                     if (app.state == .command) {

@@ -3,6 +3,7 @@ const std = @import("std");
 const App = @import("./app.zig");
 const Archive = @import("./archive.zig");
 const Image = @import("./image.zig");
+const path_utils = @import("./path_utils.zig");
 const config = &@import("./config.zig").config;
 
 pub const PreviewType = enum {
@@ -76,6 +77,31 @@ pub const PreviewCache = struct {
         self.current = null;
     }
 
+    pub fn updatePath(self: *PreviewCache, app: *App, old_path: []const u8, new_path: []const u8) error{OutOfMemory}!void {
+        if (self.current) |*entry| {
+            if (std.mem.eql(u8, entry.file_path, old_path)) {
+                if (entry.preview == .image) {
+                    app.images.mutex.lock();
+                    defer app.images.mutex.unlock();
+
+                    if (app.images.cache.fetchRemove(old_path)) |kv| {
+                        app.images.cache.put(new_path, kv.value) catch |err| {
+                            kv.value.deinit(app.alloc, app.vx, &app.tty);
+                            self.clear();
+                            return err;
+                        };
+                    }
+
+                    self.alloc.free(entry.preview.image.cache_path);
+                    entry.preview.image.cache_path = try self.alloc.dupe(u8, new_path);
+                }
+
+                self.alloc.free(entry.file_path);
+                entry.file_path = try self.alloc.dupe(u8, new_path);
+            }
+        }
+    }
+
     pub fn get(self: *PreviewCache, path: []const u8) ?*const PreviewData {
         if (self.current) |*entry| {
             if (entry.is_valid and std.mem.eql(u8, entry.file_path, path)) {
@@ -101,9 +127,10 @@ pub fn loadPreviewForCurrentEntry(app: *App) !void {
 
     const entry = (try app.directories.getSelected()) orelse return;
 
+    const clean_name = path_utils.getCleanName(entry);
     const path = try app.directories.dir.realpathAlloc(
         app.alloc,
-        entry.name,
+        clean_name,
     );
     defer app.alloc.free(path);
 
@@ -123,7 +150,8 @@ pub fn loadPreviewForCurrentEntry(app: *App) !void {
 fn loadDirectoryPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     app.directories.clearChildEntries();
 
-    app.directories.populateChildEntries(entry.name) catch |err| {
+    const clean_name = path_utils.getCleanName(entry);
+    app.directories.populateChildEntries(clean_name) catch |err| {
         const message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to read directory entries - {}.",
@@ -137,10 +165,10 @@ fn loadDirectoryPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
         return PreviewData{ .none = {} };
     };
 
-    var list = std.ArrayList([]const u8).init(app.alloc);
+    var list: std.ArrayList([]const u8) = .empty;
     for (app.directories.child_entries.all()) |child| {
         const owned = try app.alloc.dupe(u8, child);
-        try list.append(owned);
+        try list.append(app.alloc, owned);
     }
 
     return PreviewData{ .directory = list };
@@ -167,8 +195,9 @@ fn loadFilePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
 }
 
 fn loadTextPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+    const clean_name = path_utils.getCleanName(entry);
     var file = app.directories.dir.openFile(
-        entry.name,
+        clean_name,
         .{ .mode = .read_only },
     ) catch |err| {
         const message = try std.fmt.allocPrint(
@@ -209,9 +238,10 @@ fn loadTextPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
 }
 
 fn loadImagePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+    const clean_name = path_utils.getCleanName(entry);
     const path = try app.directories.dir.realpathAlloc(
         app.alloc,
-        entry.name,
+        clean_name,
     );
     defer app.alloc.free(path);
 
@@ -235,9 +265,10 @@ fn loadImagePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
 }
 
 fn loadPdfPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+    const clean_name = path_utils.getCleanName(entry);
     const path = try app.directories.dir.realpathAlloc(
         app.alloc,
-        entry.name,
+        clean_name,
     );
     defer app.alloc.free(path);
 
@@ -274,8 +305,9 @@ fn loadArchivePreview(
     entry: std.fs.Dir.Entry,
     archive_type: Archive.ArchiveType,
 ) !PreviewData {
+    const clean_name = path_utils.getCleanName(entry);
     var file = app.directories.dir.openFile(
-        entry.name,
+        clean_name,
         .{ .mode = .read_only },
     ) catch |err| {
         const message = try std.fmt.allocPrint(
@@ -326,9 +358,25 @@ fn loadArchivePreview(
 
 fn isImageExtension(ext: []const u8) bool {
     const supported = [_][]const u8{
-        ".png", ".jpg", ".jpeg", ".gif",
-        ".bmp", ".tga", ".qoi",  ".pam",
-        ".pbm", ".pgm", ".ppm",
+        ".bmp",
+        ".farbfeld",
+        ".gif",
+        ".iff",
+        ".ilbm",
+        ".jpeg",
+        ".jpg",
+        ".pam",
+        ".pbm",
+        ".pcx",
+        ".pgm",
+        ".png",
+        ".ppm",
+        ".qoi",
+        ".ras",
+        ".sgi",
+        ".tga",
+        ".tif",
+        ".tiff",
     };
 
     for (supported) |supported_ext| {

@@ -216,12 +216,39 @@ pub fn readInput(self: *App) []const u8 {
 }
 
 pub fn repopulateDirectory(self: *App, fuzzy: []const u8) error{OutOfMemory}!void {
+    // Save current selection name to restore cursor position after repopulation
+    const prev_name = if (self.directories.getSelected() catch null) |entry|
+        try self.alloc.dupe(u8, entry.name)
+    else
+        null;
+    defer if (prev_name) |name| self.alloc.free(name);
+
     self.directories.clearEntries();
     self.directories.populateEntries(fuzzy) catch |err| {
         const message = try std.fmt.allocPrint(self.alloc, "Failed to read directory entries - {}.", .{err});
         defer self.alloc.free(message);
         self.notification.write(message, .err) catch {};
         if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+    };
+
+    // Try to restore cursor to the same file by name
+    if (prev_name) |name| {
+        for (self.directories.entries.all(), 0..) |entry, i| {
+            if (std.mem.eql(u8, entry.name, name)) {
+                self.directories.entries.selected = i;
+                break;
+            }
+        }
+    }
+
+    // Revalidate current entry for display
+    self.preview_cache.invalidate();
+    Preview.loadPreviewForCurrentEntry(self) catch |err| {
+        if (self.file_logger) |file_logger| {
+            const msg = std.fmt.allocPrint(self.alloc, "Failed to load preview after repopulate: {}", .{err}) catch return;
+            defer self.alloc.free(msg);
+            file_logger.write(msg, .err) catch {};
+        }
     };
 }
 
@@ -237,7 +264,15 @@ pub fn run(self: *App) !void {
     while (!self.should_quit) {
         self.loop.pollEvent();
         while (self.loop.tryEvent()) |event| {
-            if (self.directories.getSelected()) |entry| err: {
+            const selected = self.directories.getSelected() catch |err| err: {
+                const message = try std.fmt.allocPrint(self.alloc, "Can not display file - {}", .{err});
+                defer self.alloc.free(message);
+                self.notification.write(message, .err) catch {};
+                if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
+                break :err null;
+            };
+
+            if (selected) |entry| err: {
                 @memcpy(&self.last_item_path_buf, &self.current_item_path_buf);
                 self.last_item_path = self.last_item_path_buf[0..self.current_item_path.len];
                 self.current_item_path = try std.fmt.bufPrint(
@@ -249,13 +284,8 @@ pub fn run(self: *App) !void {
                         self.notification.write(message, .err) catch {};
                         if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
                         break :err;
-                    }, entry.?.name },
+                    }, entry.name },
                 );
-            } else |err| {
-                const message = try std.fmt.allocPrint(self.alloc, "Can not display file - {}", .{err});
-                defer self.alloc.free(message);
-                self.notification.write(message, .err) catch {};
-                if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {};
             }
 
             // Global keybinds.
