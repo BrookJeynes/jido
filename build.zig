@@ -11,6 +11,21 @@ const targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .x86_64, .os_tag = .macos },
 };
 
+///Upstream zigimg, the one libvaxis pins, crashes the Zig 0.16.0 compiler.
+///Override vaxis' `zigimg` import with the patched fork pinned in
+///build.zig.zon. Drop this once libvaxis ships a fixed zigimg.
+///Tracking: https://github.com/zigimg/zigimg/issues/330
+fn vaxisModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Module {
+    const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
+    const zigimg = b.dependency("zigimg", .{ .target = target, .optimize = optimize }).module("zigimg");
+    libvaxis.addImport("zigimg", zigimg);
+    return libvaxis;
+}
+
 fn createExe(
     b: *std.Build,
     exe_name: []const u8,
@@ -18,7 +33,7 @@ fn createExe(
     optimize: std.builtin.OptimizeMode,
     build_options: *std.Build.Module,
 ) !*std.Build.Step.Compile {
-    const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
+    const libvaxis = vaxisModule(b, target, optimize);
     const fuzzig = b.dependency("fuzzig", .{ .target = target, .optimize = optimize }).module("fuzzig");
     const zeit = b.dependency("zeit", .{ .target = target, .optimize = optimize }).module("zeit");
     const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
@@ -67,7 +82,7 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const libvaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis");
+    const libvaxis = vaxisModule(b, target, optimize);
     const fuzzig = b.dependency("fuzzig", .{ .target = target, .optimize = optimize }).module("fuzzig");
     const zuid = b.dependency("zuid", .{ .target = target, .optimize = optimize }).module("zuid");
     const zeit = b.dependency("zeit", .{ .target = target, .optimize = optimize }).module("zeit");

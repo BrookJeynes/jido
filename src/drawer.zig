@@ -26,7 +26,7 @@ file_name_buf: [std.fs.max_path_bytes + 2]u8 = undefined, // +2 to accomodate fo
 git_branch: [1024]u8 = undefined,
 verbose: bool = false,
 
-pub fn draw(self: *Drawer, app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
+pub fn draw(self: *Drawer, app: *App) !void {
     const win = app.vx.window();
     win.clear();
 
@@ -51,7 +51,7 @@ pub fn draw(self: *Drawer, app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
     }
 
     const abs_file_path_bar = try self.drawAbsFilePath(app, win);
-    const file_info_bar = try self.drawFileInfo(app.alloc, &app.directories, win);
+    const file_info_bar = try self.drawFileInfo(&app.directories, win);
     app.last_known_height = drawDirList(
         win,
         app.directories.entries,
@@ -75,7 +75,7 @@ fn drawFileName(
     self: *Drawer,
     directories: *Directories,
     win: vaxis.Window,
-) error{NoSpaceLeft}!vaxis.Window {
+) !vaxis.Window {
     const file_name_bar = win.child(.{
         .x_off = win.width / 2,
         .y_off = 0,
@@ -98,7 +98,7 @@ fn drawFilePreview(
     app: *App,
     win: vaxis.Window,
     file_name_win: vaxis.Window,
-) error{ OutOfMemory, NoSpaceLeft }!void {
+) !void {
     const bottom_div: u16 = 1;
 
     const preview_win = win.child(.{
@@ -159,8 +159,8 @@ fn drawFilePreview(
                 return;
             }
 
-            app.images.mutex.lock();
-            defer app.images.mutex.unlock();
+            app.images.mutex.lockUncancelable(app.io);
+            defer app.images.mutex.unlock(app.io);
 
             if (app.images.cache.getPtr(img_info.cache_path)) |cache_entry| {
                 switch (cache_entry.status) {
@@ -203,10 +203,9 @@ fn drawFilePreview(
 
 fn drawFileInfo(
     self: *Drawer,
-    alloc: std.mem.Allocator,
     directories: *Directories,
     win: vaxis.Window,
-) error{NoSpaceLeft}!vaxis.Window {
+) !vaxis.Window {
     const bottom_div: u16 = if (self.verbose) 6 else 1;
 
     const file_info_win = win.child(.{
@@ -222,10 +221,11 @@ fn drawFileInfo(
         if (entry) |e| break :lbl e else return file_info_win;
     };
 
-    var fbs = std.io.fixedBufferStream(&self.file_info_buf);
+    const io = directories.io;
+    var fbs = std.Io.Writer.fixed(&self.file_info_buf);
 
     // Selected entry.
-    try fbs.writer().print(
+    try fbs.print(
         "{s}{d}/{d}{s}",
         .{
             if (self.verbose) "Entry: " else "",
@@ -237,44 +237,37 @@ fn drawFileInfo(
 
     // Time created / last modified
     if (self.verbose) lbl: {
-        var maybe_meta: ?std.fs.File.Stat = null;
+        var maybe_meta: ?std.Io.File.Stat = null;
         if (entry.kind == .directory) {
-            maybe_meta = directories.dir.stat() catch break :lbl;
+            maybe_meta = directories.dir.stat(io) catch break :lbl;
         } else if (entry.kind == .file) {
             const clean_name = path_utils.getCleanName(entry);
-            var file = directories.dir.openFile(clean_name, .{}) catch break :lbl;
-            maybe_meta = file.stat() catch break :lbl;
+            var file = directories.dir.openFile(io, clean_name, .{}) catch break :lbl;
+            defer file.close(io);
+            maybe_meta = file.stat(io) catch break :lbl;
         }
 
         const meta = maybe_meta orelse break :lbl;
-        var env = std.process.getEnvMap(alloc) catch break :lbl;
-        defer env.deinit();
-        const local = zeit.local(alloc, &env) catch break :lbl;
+        const local = zeit.local(directories.alloc, io, .{}) catch break :lbl;
         defer local.deinit();
 
-        const ctime_instant = zeit.instant(.{
-            .source = .{ .unix_nano = meta.ctime },
-            .timezone = &local,
-        }) catch break :lbl;
+        const ctime_instant = zeit.instant(.{ .unix_nano = meta.ctime.nanoseconds }, &local);
         const ctime = ctime_instant.time();
-        ctime.strftime(fbs.writer().any(), "Created: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
+        ctime.strftime(&fbs, "Created: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
 
-        const mtime_instant = zeit.instant(.{
-            .source = .{ .unix_nano = meta.mtime },
-            .timezone = &local,
-        }) catch break :lbl;
+        const mtime_instant = zeit.instant(.{ .unix_nano = meta.mtime.nanoseconds }, &local);
         const mtime = mtime_instant.time();
-        mtime.strftime(fbs.writer().any(), "Last modified: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
+        mtime.strftime(&fbs, "Last modified: %Y-%m-%d %H:%M:%S\n") catch break :lbl;
     }
 
     // File permissions.
     var file_perm_buf: [11]u8 = undefined;
     const file_perms: usize = lbl: {
-        if (self.verbose) try fbs.writer().writeAll("Permissions: ");
-        var file_perm_fbs = std.io.fixedBufferStream(&file_perm_buf);
+        if (self.verbose) try fbs.writeAll("Permissions: ");
+        var file_perm_fbs = std.Io.Writer.fixed(&file_perm_buf);
 
         if (entry.kind == .directory) {
-            _ = try file_perm_fbs.write("d");
+            try file_perm_fbs.writeAll("d");
         }
 
         const perm_strings = [_][]const u8{
@@ -283,23 +276,23 @@ fn drawFileInfo(
         };
 
         const clean_name = path_utils.getCleanName(entry);
-        const stat = directories.dir.statFile(clean_name) catch {
-            _ = try file_perm_fbs.write("---------\n");
+        const stat = directories.dir.statFile(io, clean_name, .{}) catch {
+            try file_perm_fbs.writeAll("---------\n");
             break :lbl 10;
         };
         // Ignore upper bytes as they represent file type.
-        const perms = @as(u9, @truncate(stat.mode));
+        const perms = @as(u9, @truncate(@intFromEnum(stat.permissions)));
 
         for (0..3) |group| {
             const shift: u4 = @truncate((2 - group) * 3); // Extract from left to right
             const perm = @as(u3, @truncate((perms >> shift) & 0b111));
-            _ = try file_perm_fbs.write(perm_strings[perm]);
+            try file_perm_fbs.writeAll(perm_strings[perm]);
         }
 
         if (self.verbose) {
-            _ = try file_perm_fbs.write("\n");
+            try file_perm_fbs.writeAll("\n");
         } else {
-            _ = try file_perm_fbs.write(" ");
+            try file_perm_fbs.writeAll(" ");
         }
 
         if (entry.kind == .directory) {
@@ -308,21 +301,22 @@ fn drawFileInfo(
             break :lbl 10;
         }
     };
-    try fbs.writer().writeAll(file_perm_buf[0..file_perms]);
+    try fbs.writeAll(file_perm_buf[0..file_perms]);
 
     // Size.
     const size: ?usize = lbl: {
         const clean_name = path_utils.getCleanName(entry);
-        const stat = directories.dir.statFile(clean_name) catch break :lbl null;
+        const stat = directories.dir.statFile(io, clean_name, .{}) catch break :lbl null;
         if (entry.kind == .file) {
             break :lbl stat.size;
         } else if (entry.kind == .directory) {
             if (config.true_dir_size) {
                 var dir = directories.dir.openDir(
+                    io,
                     clean_name,
                     .{ .iterate = true },
                 ) catch break :lbl null;
-                defer dir.close();
+                defer dir.close(io);
                 break :lbl directories.getDirSize(dir) catch break :lbl null;
             } else {
                 break :lbl stat.size;
@@ -331,7 +325,7 @@ fn drawFileInfo(
 
         break :lbl 0;
     };
-    if (size) |s| try fbs.writer().print("{s}{B:.2}\n", .{
+    if (size) |s| try fbs.print("{s}{B:.2}\n", .{
         if (self.verbose) "Size: " else "",
         s,
     });
@@ -339,19 +333,19 @@ fn drawFileInfo(
     // Extension.
     const extension = std.fs.path.extension(entry.name);
     if (self.verbose) {
-        try fbs.writer().print(
+        try fbs.print(
             "Extension: {s}\n",
             .{if (entry.kind == .directory) "Dir" else extension},
         );
     } else {
-        try fbs.writer().print(
+        try fbs.print(
             "{s} ",
             .{if (entry.kind == .directory) "dir" else extension},
         );
     }
 
     _ = file_info_win.printSegment(.{
-        .text = fbs.getWritten(),
+        .text = fbs.buffered(),
         .style = config.styles.file_information,
     }, .{});
 
@@ -360,7 +354,7 @@ fn drawFileInfo(
 
 fn drawDirList(
     win: vaxis.Window,
-    list: List(std.fs.Dir.Entry),
+    list: List(std.Io.Dir.Entry),
     abs_file_path: vaxis.Window,
     file_information: vaxis.Window,
 ) u16 {
@@ -408,7 +402,7 @@ fn drawAbsFilePath(
     self: *Drawer,
     app: *App,
     win: vaxis.Window,
-) error{ OutOfMemory, NoSpaceLeft }!vaxis.Window {
+) !vaxis.Window {
     const abs_file_path_bar = win.child(.{
         .x_off = 0,
         .y_off = 0,
@@ -416,7 +410,7 @@ fn drawAbsFilePath(
         .height = top_div,
     });
 
-    const branch_alloc = Git.getGitBranch(app.alloc, app.directories.dir) catch null;
+    const branch_alloc = Git.getGitBranch(app.io, app.alloc, app.directories.dir) catch null;
     defer if (branch_alloc) |b| app.alloc.free(b);
     const branch = if (branch_alloc) |b|
         try std.fmt.bufPrint(

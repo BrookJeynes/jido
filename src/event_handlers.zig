@@ -25,7 +25,7 @@ pub fn handleGlobalEvent(
             }
 
             if ((key.codepoint == 'r' and key.mods.ctrl)) {
-                if (config.parse(app.alloc, app)) {
+                if (config.parse(app.io, app.alloc, app)) {
                     app.notification.write("Reloaded configuration file.", .info) catch {};
                 } else |err| switch (err) {
                     error.SyntaxError => {

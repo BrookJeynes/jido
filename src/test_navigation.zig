@@ -2,8 +2,10 @@ const std = @import("std");
 const testing = std.testing;
 const TestEnv = @import("test_helpers.zig").TestEnv;
 const Directories = @import("directories.zig");
+const io = std.testing.io;
 const events = @import("events.zig");
 const App = @import("app.zig");
+const getCleanName = @import("path_utils.zig").getCleanName;
 
 test "Navigation: traverse left to parent directory" {
     var env = try TestEnv.init(testing.allocator);
@@ -19,14 +21,14 @@ test "Navigation: traverse left to parent directory" {
     const child_path = try env.path("parent/child");
     defer testing.allocator.free(child_path);
 
-    var dirs = try Directories.init(testing.allocator, child_path);
+    var dirs = try Directories.init(io, testing.allocator, child_path);
     defer dirs.deinit();
 
     const before_path = try dirs.fullPath(".");
     try testing.expect(std.mem.endsWith(u8, before_path, "child"));
 
-    const parent_dir = try dirs.dir.openDir("../", .{ .iterate = true });
-    dirs.dir.close();
+    const parent_dir = try dirs.dir.openDir(io, "../", .{ .iterate = true });
+    dirs.dir.close(io);
     dirs.dir = parent_dir;
 
     const after_path = try dirs.fullPath(".");
@@ -35,9 +37,9 @@ test "Navigation: traverse left to parent directory" {
     try dirs.populateEntries("");
     var found_child = false;
     for (dirs.entries.all()) |entry| {
-        if (std.mem.eql(u8, entry.name, "child")) {
+        if (std.mem.eql(u8, getCleanName(entry), "child")) {
             found_child = true;
-            try testing.expectEqual(std.fs.Dir.Entry.Kind.directory, entry.kind);
+            try testing.expectEqual(std.Io.File.Kind.directory, entry.kind);
         }
     }
     try testing.expect(found_child);
@@ -54,13 +56,13 @@ test "Navigation: traverse right into directory" {
         .{ .name = "file.txt", .children = null },
     });
 
-    var dirs = try Directories.init(testing.allocator, env.tmp_path);
+    var dirs = try Directories.init(io, testing.allocator, env.tmp_path);
     defer dirs.deinit();
 
     try dirs.populateEntries("");
 
     for (dirs.entries.all(), 0..) |entry, i| {
-        if (std.mem.eql(u8, entry.name, "subdir")) {
+        if (std.mem.eql(u8, getCleanName(entry), "subdir")) {
             dirs.entries.selected = i;
             break;
         }
@@ -68,10 +70,10 @@ test "Navigation: traverse right into directory" {
 
     const selected = try dirs.getSelected();
     try testing.expect(selected != null);
-    try testing.expectEqualStrings("subdir", selected.?.name);
+    try testing.expectEqualStrings("subdir", getCleanName(selected.?));
 
-    const subdir = try dirs.dir.openDir("subdir", .{ .iterate = true });
-    dirs.dir.close();
+    const subdir = try dirs.dir.openDir(io, "subdir", .{ .iterate = true });
+    dirs.dir.close(io);
     dirs.dir = subdir;
 
     const current_path = try dirs.fullPath(".");
@@ -91,7 +93,7 @@ test "Navigation: move selection with next and previous" {
 
     try env.createFiles(&.{ "file1.txt", "file2.txt", "file3.txt", "file4.txt", "file5.txt" });
 
-    var dirs = try Directories.init(testing.allocator, env.tmp_path);
+    var dirs = try Directories.init(io, testing.allocator, env.tmp_path);
     defer dirs.deinit();
 
     try dirs.populateEntries("");

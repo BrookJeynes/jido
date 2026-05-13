@@ -81,8 +81,8 @@ pub const PreviewCache = struct {
         if (self.current) |*entry| {
             if (std.mem.eql(u8, entry.file_path, old_path)) {
                 if (entry.preview == .image) {
-                    app.images.mutex.lock();
-                    defer app.images.mutex.unlock();
+                    app.images.mutex.lockUncancelable(app.io);
+                    defer app.images.mutex.unlock(app.io);
 
                     if (app.images.cache.fetchRemove(old_path)) |kv| {
                         app.images.cache.put(new_path, kv.value) catch |err| {
@@ -128,10 +128,7 @@ pub fn loadPreviewForCurrentEntry(app: *App) !void {
     const entry = (try app.directories.getSelected()) orelse return;
 
     const clean_name = path_utils.getCleanName(entry);
-    const path = try app.directories.dir.realpathAlloc(
-        app.alloc,
-        clean_name,
-    );
+    const path = try app.directories.dir.realPathFileAlloc(app.io, clean_name, app.alloc);
     defer app.alloc.free(path);
 
     if (app.preview_cache.get(path)) |_| {
@@ -147,7 +144,7 @@ pub fn loadPreviewForCurrentEntry(app: *App) !void {
     try app.preview_cache.set(path, preview);
 }
 
-fn loadDirectoryPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+fn loadDirectoryPreview(app: *App, entry: std.Io.Dir.Entry) !PreviewData {
     app.directories.clearChildEntries();
 
     const clean_name = path_utils.getCleanName(entry);
@@ -174,7 +171,7 @@ fn loadDirectoryPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     return PreviewData{ .directory = list };
 }
 
-fn loadFilePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+fn loadFilePreview(app: *App, entry: std.Io.Dir.Entry) !PreviewData {
     const file_ext = std.fs.path.extension(entry.name);
 
     if (config.show_images) {
@@ -194,12 +191,9 @@ fn loadFilePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     return try loadTextPreview(app, entry);
 }
 
-fn loadTextPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+fn loadTextPreview(app: *App, entry: std.Io.Dir.Entry) !PreviewData {
     const clean_name = path_utils.getCleanName(entry);
-    var file = app.directories.dir.openFile(
-        clean_name,
-        .{ .mode = .read_only },
-    ) catch |err| {
+    var file = app.directories.dir.openFile(app.io, clean_name, .{ .mode = .read_only }) catch |err| {
         const message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to open file - {}.",
@@ -212,10 +206,11 @@ fn loadTextPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
         }
         return PreviewData{ .none = {} };
     };
-    defer file.close();
+    defer file.close(app.io);
 
     var buffer: [4096]u8 = undefined;
-    const bytes = file.readAll(&buffer) catch |err| {
+    var file_reader = file.reader(app.io, &.{});
+    const bytes = file_reader.interface.readSliceShort(&buffer) catch |err| {
         const message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to read file contents - {}.",
@@ -237,17 +232,14 @@ fn loadTextPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     return PreviewData{ .none = {} };
 }
 
-fn loadImagePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+fn loadImagePreview(app: *App, entry: std.Io.Dir.Entry) !PreviewData {
     const clean_name = path_utils.getCleanName(entry);
-    const path = try app.directories.dir.realpathAlloc(
-        app.alloc,
-        clean_name,
-    );
+    const path = try app.directories.dir.realPathFileAlloc(app.io, clean_name, app.alloc);
     defer app.alloc.free(path);
 
-    app.images.mutex.lock();
+    app.images.mutex.lockUncancelable(app.io);
     const exists = app.images.cache.contains(path);
-    app.images.mutex.unlock();
+    app.images.mutex.unlock(app.io);
 
     if (!exists) {
         const owned_path = try app.alloc.dupe(u8, path);
@@ -264,16 +256,12 @@ fn loadImagePreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     };
 }
 
-fn loadPdfPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
+fn loadPdfPreview(app: *App, entry: std.Io.Dir.Entry) !PreviewData {
     const clean_name = path_utils.getCleanName(entry);
-    const path = try app.directories.dir.realpathAlloc(
-        app.alloc,
-        clean_name,
-    );
+    const path = try app.directories.dir.realPathFileAlloc(app.io, clean_name, app.alloc);
     defer app.alloc.free(path);
 
-    const result = std.process.Child.run(.{
-        .allocator = app.alloc,
+    const result = std.process.run(app.alloc, app.io, .{
         .argv = &[_][]const u8{
             "pdftotext",
             "-f",
@@ -283,7 +271,7 @@ fn loadPdfPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
             path,
             "-",
         },
-        .cwd_dir = app.directories.dir,
+        .cwd = .{ .dir = app.directories.dir },
     }) catch {
         app.notification.write("No preview available. Install pdftotext to get PDF previews.", .err) catch {};
         return PreviewData{ .none = {} };
@@ -291,9 +279,15 @@ fn loadPdfPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
     defer app.alloc.free(result.stdout);
     defer app.alloc.free(result.stderr);
 
-    if (result.term.Exited != 0) {
-        app.notification.write("No preview available. Install pdftotext to get PDF previews.", .err) catch {};
-        return PreviewData{ .none = {} };
+    switch (result.term) {
+        .exited => |code| if (code != 0) {
+            app.notification.write("No preview available. Install pdftotext to get PDF previews.", .err) catch {};
+            return PreviewData{ .none = {} };
+        },
+        else => {
+            app.notification.write("No preview available. Install pdftotext to get PDF previews.", .err) catch {};
+            return PreviewData{ .none = {} };
+        },
     }
 
     const text = try app.alloc.dupe(u8, result.stdout);
@@ -302,14 +296,11 @@ fn loadPdfPreview(app: *App, entry: std.fs.Dir.Entry) !PreviewData {
 
 fn loadArchivePreview(
     app: *App,
-    entry: std.fs.Dir.Entry,
+    entry: std.Io.Dir.Entry,
     archive_type: Archive.ArchiveType,
 ) !PreviewData {
     const clean_name = path_utils.getCleanName(entry);
-    var file = app.directories.dir.openFile(
-        clean_name,
-        .{ .mode = .read_only },
-    ) catch |err| {
+    var file = app.directories.dir.openFile(app.io, clean_name, .{ .mode = .read_only }) catch |err| {
         const message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to open archive - {}.",
@@ -322,9 +313,10 @@ fn loadArchivePreview(
         }
         return PreviewData{ .none = {} };
     };
-    defer file.close();
+    defer file.close(app.io);
 
     const archive_contents = Archive.listArchiveContents(
+        app.io,
         app.alloc,
         file,
         archive_type,

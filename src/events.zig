@@ -22,17 +22,18 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
     const clean_name = path_utils.getCleanName(entry);
 
     var prev_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const prev_path = app.directories.dir.realpath(clean_name, &prev_path_buf) catch {
+    const prev_path_len = app.directories.dir.realPathFile(app.io, clean_name, &prev_path_buf) catch {
         message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - unable to retrieve absolute path.", .{entry.name});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
+    const prev_path = prev_path_buf[0..prev_path_len];
     const prev_path_alloc = try app.alloc.dupe(u8, prev_path);
 
     var trash_dir = dir: {
         notfound: {
-            break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
+            break :dir (config.trashDir(app.io) catch break :notfound) orelse break :notfound;
         }
         app.alloc.free(prev_path_alloc);
         message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - unable to retrieve trash directory.", .{entry.name});
@@ -40,15 +41,16 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
-    defer trash_dir.close();
+    defer trash_dir.close(app.io);
 
     var trash_dir_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const trash_dir_path = trash_dir.realpath(".", &trash_dir_path_buf) catch {
+    const trash_dir_path_len = trash_dir.realPathFile(app.io, ".", &trash_dir_path_buf) catch {
         message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - unable to retrieve absolute path for trash directory.", .{entry.name});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
+    const trash_dir_path = trash_dir_path_buf[0..trash_dir_path_len];
 
     if (std.mem.eql(u8, prev_path_alloc, trash_dir_path)) {
         app.notification.write("Can not delete trash directory.", .warn) catch {};
@@ -56,8 +58,8 @@ pub fn delete(app: *App) error{OutOfMemory}!void {
         return;
     }
 
-    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{f}", .{ trash_dir_path, clean_name, zuid.new.v4() });
-    if (app.directories.dir.rename(clean_name, tmp_path)) {
+    const tmp_path = try std.fmt.allocPrint(app.alloc, "{s}/{s}-{f}", .{ trash_dir_path, clean_name, zuid.new.v4(app.io) });
+    if (app.directories.dir.rename(clean_name, app.directories.dir, tmp_path, app.io)) {
         if (app.actions.push(.{
             .delete = .{ .prev_path = prev_path_alloc, .new_path = tmp_path },
         })) |prev_elem| {
@@ -88,21 +90,22 @@ pub fn rename(app: *App) error{OutOfMemory}!void {
     }) orelse return;
 
     var dir_prefix_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const dir_prefix = app.directories.dir.realpath(".", &dir_prefix_buf) catch {
+    const dir_prefix_len = app.directories.dir.realPathFile(app.io, ".", &dir_prefix_buf) catch {
         message = try std.fmt.allocPrint(app.alloc, "Failed to rename '{s}' - unable to retrieve absolute path.", .{entry.name});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
+    const dir_prefix = dir_prefix_buf[0..dir_prefix_len];
 
     const new_path = try app.text_input.toOwnedSlice();
     defer app.alloc.free(new_path);
 
-    if (environment.fileExists(app.directories.dir, new_path)) {
+    if (environment.fileExists(app.io, app.directories.dir, new_path)) {
         message = try std.fmt.allocPrint(app.alloc, "Can not rename file - '{s}' already exists.", .{new_path});
         app.notification.write(message.?, .warn) catch {};
     } else {
-        app.directories.dir.rename(entry.name, new_path) catch |err| {
+        app.directories.dir.rename(entry.name, app.directories.dir, new_path, app.io) catch |err| {
             message = try std.fmt.allocPrint(app.alloc, "Failed to rename '{s}' - {}.", .{ new_path, err });
             app.notification.write(message.?, .err) catch {};
             if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -160,7 +163,7 @@ pub fn forceDelete(app: *App) error{OutOfMemory}!void {
         return;
     }) orelse return;
 
-    app.directories.dir.deleteTree(entry.name) catch |err| {
+    app.directories.dir.deleteTree(app.io, entry.name) catch |err| {
         const error_message = try std.fmt.allocPrint(app.alloc, "Failed to force delete '{s}' - {}.", .{ entry.name, err });
         app.notification.write(error_message, .err) catch {};
         return;
@@ -231,7 +234,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
     const yanked = if (app.yanked) |y| y else return;
 
     var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const new_path_res = environment.checkDuplicatePath(&new_path_buf, app.directories.dir, yanked.entry.name) catch {
+    const new_path_res = environment.checkDuplicatePath(app.io, &new_path_buf, app.directories.dir, yanked.entry.name) catch {
         message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - path too long.", .{yanked.entry.name});
         app.notification.write(message.?, .err) catch {};
         return;
@@ -239,21 +242,21 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
 
     switch (yanked.entry.kind) {
         .directory => {
-            var source_dir = std.fs.openDirAbsolute(yanked.dir, .{ .iterate = true }) catch {
+            var source_dir = std.Io.Dir.openDirAbsolute(app.io, yanked.dir, .{ .iterate = true }) catch {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to open directory '{s}'.", .{ yanked.entry.name, yanked.dir });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
-            defer source_dir.close();
+            defer source_dir.close(app.io);
 
-            var selected_dir = source_dir.openDir(yanked.entry.name, .{ .iterate = true }) catch {
+            var selected_dir = source_dir.openDir(app.io, yanked.entry.name, .{ .iterate = true }) catch {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to open directory '{s}'.", .{ yanked.entry.name, yanked.entry.name });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
-            defer selected_dir.close();
+            defer selected_dir.close(app.io);
 
             var walker = selected_dir.walk(app.alloc) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to walk directory tree due to {}.", .{ yanked.entry.name, err });
@@ -264,7 +267,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
             defer walker.deinit();
 
             // Make initial dir.
-            app.directories.dir.makeDir(new_path_res.path) catch |err| {
+            app.directories.dir.createDir(app.io, new_path_res.path, .default_dir) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to create new directory due to {}.", .{ yanked.entry.name, err });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -273,7 +276,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
 
             var errored = false;
             var inner_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            while (walker.next() catch |err| {
+            while (walker.next(app.io) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy one or more files - {}. A partial copy may have taken place.", .{err});
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -282,7 +285,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
                 const path = try std.fmt.bufPrint(&inner_path_buf, "{s}{s}{s}", .{ new_path_res.path, std.fs.path.sep_str, entry.path });
                 switch (entry.kind) {
                     .directory => {
-                        app.directories.dir.makeDir(path) catch {
+                        app.directories.dir.createDir(app.io, path, .default_dir) catch {
                             message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to create containing directory '{s}'.", .{ entry.basename, path });
                             app.notification.write(message.?, .err) catch {};
                             if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -290,7 +293,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
                         };
                     },
                     .file, .sym_link => {
-                        entry.dir.copyFile(entry.basename, app.directories.dir, path, .{}) catch |err| switch (err) {
+                        entry.dir.copyFile(entry.basename, app.directories.dir, path, app.io, .{}) catch |err| switch (err) {
                             error.FileNotFound => {
                                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - the original file was deleted or moved.", .{entry.path});
                                 app.notification.write(message.?, .err) catch {};
@@ -322,19 +325,20 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
             }
         },
         .file, .sym_link => {
-            var source_dir = std.fs.openDirAbsolute(yanked.dir, .{ .iterate = true }) catch {
+            var source_dir = std.Io.Dir.openDirAbsolute(app.io, yanked.dir, .{ .iterate = true }) catch {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to copy '{s}' - unable to open directory '{s}'.", .{ yanked.entry.name, yanked.dir });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
-            defer source_dir.close();
+            defer source_dir.close(app.io);
 
-            std.fs.Dir.copyFile(
+            std.Io.Dir.copyFile(
                 source_dir,
                 yanked.entry.name,
                 app.directories.dir,
                 new_path_res.path,
+                app.io,
                 .{},
             ) catch |err| switch (err) {
                 error.FileNotFound => {
@@ -363,7 +367,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
 
     // Append action to undo history.
     var new_path_abs_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const new_path_abs = app.directories.dir.realpath(new_path_res.path, &new_path_abs_buf) catch {
+    const new_path_abs_len = app.directories.dir.realPathFile(app.io, new_path_res.path, &new_path_abs_buf) catch {
         message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to push copy action for '{s}' to undo history - unable to retrieve absolute directory path for '{s}'. This action will not be able to be undone via the `undo` keybind.",
@@ -373,6 +377,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
+    const new_path_abs = new_path_abs_buf[0..new_path_abs_len];
 
     if (app.actions.push(.{
         .paste = try app.alloc.dupe(u8, new_path_abs),
@@ -388,7 +393,7 @@ pub fn paste(app: *App) error{ OutOfMemory, NoSpaceLeft }!void {
 pub fn traverseLeft(app: *App) error{OutOfMemory}!void {
     app.text_input.clearAndFree();
 
-    const dir = app.directories.dir.openDir("../", .{ .iterate = true }) catch |err| {
+    const dir = app.directories.dir.openDir(app.io, "../", .{ .iterate = true }) catch |err| {
         const message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
         defer app.alloc.free(message);
         app.notification.write(message, .err) catch {};
@@ -396,7 +401,7 @@ pub fn traverseLeft(app: *App) error{OutOfMemory}!void {
         return;
     };
 
-    app.directories.dir.close();
+    app.directories.dir.close(app.io);
     app.directories.dir = dir;
 
     try app.repopulateDirectory("");
@@ -422,26 +427,26 @@ pub fn traverseRight(app: *App) !void {
         .directory => {
             app.text_input.clearAndFree();
 
-            const dir = app.directories.dir.openDir(entry.name, .{ .iterate = true }) catch |err| {
+            const dir = app.directories.dir.openDir(app.io, entry.name, .{ .iterate = true }) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to read directory entries - {}.", .{err});
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
 
-            app.directories.dir.close();
+            app.directories.dir.close(app.io);
             app.directories.dir = dir;
             _ = app.directories.history.push(app.directories.entries.selected);
             try app.repopulateDirectory("");
             app.text_input.clearAndFree();
         },
         .file => {
-            if (environment.getEditor()) |editor| {
+            if (environment.getEditor(app.env_map)) |editor| {
                 try app.vx.exitAltScreen(app.tty.writer());
                 try app.vx.resetState(app.tty.writer());
                 app.loop.stop();
 
-                environment.openFile(app.alloc, app.directories.dir, entry.name, editor) catch |err| {
+                environment.openFile(app.io, app.directories.dir, entry.name, editor) catch |err| {
                     message = try std.fmt.allocPrint(app.alloc, "Failed to open file '{s}' - {}.", .{ entry.name, err });
                     app.notification.write(message.?, .err) catch {};
                     if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -466,7 +471,7 @@ pub fn createNewDir(app: *App) error{OutOfMemory}!void {
     const dir = try app.text_input.toOwnedSlice();
     defer app.alloc.free(dir);
 
-    app.directories.dir.makeDir(dir) catch |err| {
+    app.directories.dir.createDir(app.io, dir, .default_dir) catch |err| {
         message = try std.fmt.allocPrint(app.alloc, "Failed to create directory '{s}' - {}", .{ dir, err });
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -486,11 +491,11 @@ pub fn createNewFile(app: *App) error{OutOfMemory}!void {
     const file = try app.text_input.toOwnedSlice();
     defer app.alloc.free(file);
 
-    if (environment.fileExists(app.directories.dir, file)) {
+    if (environment.fileExists(app.io, app.directories.dir, file)) {
         message = try std.fmt.allocPrint(app.alloc, "Can not create file - '{s}' already exists.", .{file});
         app.notification.write(message.?, .warn) catch {};
     } else {
-        _ = app.directories.dir.createFile(file, .{}) catch |err| {
+        _ = app.directories.dir.createFile(app.io, file, .{}) catch |err| {
             message = try std.fmt.allocPrint(app.alloc, "Failed to create file '{s}' - {}", .{ file, err });
             app.notification.write(message.?, .err) catch {};
             if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -519,14 +524,14 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
             defer app.alloc.free(a.prev_path);
 
             var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const new_path_res = environment.checkDuplicatePath(&new_path_buf, app.directories.dir, a.prev_path) catch {
+            const new_path_res = environment.checkDuplicatePath(app.io, &new_path_buf, app.directories.dir, a.prev_path) catch {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to undo delete '{s}' - path too long.", .{a.prev_path});
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
 
-            app.directories.dir.rename(a.new_path, new_path_res.path) catch |err| {
+            app.directories.dir.rename(a.new_path, app.directories.dir, new_path_res.path, app.io) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to undo delete for '{s}' - {}.", .{ a.prev_path, err });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -541,14 +546,14 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
             defer app.alloc.free(a.prev_path);
 
             var new_path_buf: [std.fs.max_path_bytes]u8 = undefined;
-            const new_path_res = environment.checkDuplicatePath(&new_path_buf, app.directories.dir, a.prev_path) catch {
+            const new_path_res = environment.checkDuplicatePath(app.io, &new_path_buf, app.directories.dir, a.prev_path) catch {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to undo rename '{s}' - path too long.", .{a.prev_path});
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
                 return;
             };
 
-            app.directories.dir.rename(a.new_path, new_path_res.path) catch |err| {
+            app.directories.dir.rename(a.new_path, app.directories.dir, new_path_res.path, app.io) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to undo rename for '{s}' - {}.", .{ a.new_path, err });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -561,7 +566,7 @@ pub fn undo(app: *App) error{OutOfMemory}!void {
         .paste => |path| {
             defer app.alloc.free(path);
 
-            app.directories.dir.deleteTree(path) catch |err| {
+            app.directories.dir.deleteTree(app.io, path) catch |err| {
                 message = try std.fmt.allocPrint(app.alloc, "Failed to delete '{s}' - {}.", .{ path, err });
                 app.notification.write(message.?, .err) catch {};
                 if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -590,21 +595,21 @@ pub fn extractArchive(app: *App) error{OutOfMemory}!void {
 
     const extract_dir_name = Archive.getExtractDirName(entry.name);
 
-    if (environment.fileExists(app.directories.dir, extract_dir_name)) {
+    if (environment.fileExists(app.io, app.directories.dir, extract_dir_name)) {
         message = try std.fmt.allocPrint(app.alloc, "Can not extract file(s) - '{s}' already exists.", .{extract_dir_name});
         app.notification.write(message.?, .warn) catch {};
         return;
     }
 
-    var dest_dir = app.directories.dir.makeOpenPath(extract_dir_name, .{}) catch |err| {
+    var dest_dir = app.directories.dir.createDirPathOpen(app.io, extract_dir_name, .{}) catch |err| {
         message = try std.fmt.allocPrint(app.alloc, "Failed to extract archive '{s}' - {}.", .{ extract_dir_name, err });
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
-    defer dest_dir.close();
+    defer dest_dir.close(app.io);
 
-    const archive_file = app.directories.dir.openFile(entry.name, .{}) catch |err| {
+    const archive_file = app.directories.dir.openFile(app.io, entry.name, .{}) catch |err| {
         message = try std.fmt.allocPrint(
             app.alloc,
             "Failed to open archive '{s}' - {}.",
@@ -614,13 +619,14 @@ pub fn extractArchive(app: *App) error{OutOfMemory}!void {
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
 
         if (!config.keep_partial_extraction) {
-            app.directories.dir.deleteTree(extract_dir_name) catch {};
+            app.directories.dir.deleteTree(app.io, extract_dir_name) catch {};
         }
         return;
     };
-    defer archive_file.close();
+    defer archive_file.close(app.io);
 
     const result = Archive.extractArchive(
+        app.io,
         app.alloc,
         archive_file,
         archive_type,
@@ -636,7 +642,7 @@ pub fn extractArchive(app: *App) error{OutOfMemory}!void {
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
 
         if (!config.keep_partial_extraction) {
-            app.directories.dir.deleteTree(extract_dir_name) catch {};
+            app.directories.dir.deleteTree(app.io, extract_dir_name) catch {};
         }
         return;
     };

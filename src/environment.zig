@@ -3,20 +3,20 @@ const builtin = @import("builtin");
 
 const zuid = @import("zuid");
 
-pub fn getHomeDir() !?std.fs.Dir {
-    return try std.fs.openDirAbsolute(std.posix.getenv("HOME") orelse {
+pub fn getHomeDir(io: std.Io, env_map: *const std.process.Environ.Map) !?std.Io.Dir {
+    return try std.Io.Dir.openDirAbsolute(io, env_map.get("HOME") orelse {
         return null;
     }, .{ .iterate = true });
 }
 
-pub fn getXdgConfigHomeDir() !?std.fs.Dir {
-    return try std.fs.openDirAbsolute(std.posix.getenv("XDG_CONFIG_HOME") orelse {
+pub fn getXdgConfigHomeDir(io: std.Io, env_map: *const std.process.Environ.Map) !?std.Io.Dir {
+    return try std.Io.Dir.openDirAbsolute(io, env_map.get("XDG_CONFIG_HOME") orelse {
         return null;
     }, .{ .iterate = true });
 }
 
-pub fn getEditor() ?[]const u8 {
-    const editor = std.posix.getenv("EDITOR");
+pub fn getEditor(env_map: *const std.process.Environ.Map) ?[]const u8 {
+    const editor = env_map.get("EDITOR");
     if (editor) |e| {
         if (std.mem.trim(u8, e, " ").len > 0) {
             return e;
@@ -26,21 +26,22 @@ pub fn getEditor() ?[]const u8 {
 }
 
 pub fn checkDuplicatePath(
+    io: std.Io,
     buf: []u8,
-    dir: std.fs.Dir,
+    dir: std.Io.Dir,
     relative_path: []const u8,
 ) error{NoSpaceLeft}!struct {
     path: []const u8,
     had_duplicate: bool,
 } {
     var had_duplicate = false;
-    const new_path = if (fileExists(dir, relative_path)) lbl: {
+    const new_path = if (fileExists(io, dir, relative_path)) lbl: {
         had_duplicate = true;
         const extension = std.fs.path.extension(relative_path);
         break :lbl try std.fmt.bufPrint(
             buf,
             "{s}-{f}{s}",
-            .{ relative_path[0 .. relative_path.len - extension.len], zuid.new.v4(), extension },
+            .{ relative_path[0 .. relative_path.len - extension.len], zuid.new.v4(io), extension },
         );
     } else lbl: {
         break :lbl try std.fmt.bufPrint(buf, "{s}", .{relative_path});
@@ -50,21 +51,22 @@ pub fn checkDuplicatePath(
 }
 
 pub fn openFile(
-    alloc: std.mem.Allocator,
-    dir: std.fs.Dir,
+    io: std.Io,
+    dir: std.Io.Dir,
     file: []const u8,
     editor: []const u8,
 ) !void {
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const path = try dir.realpath(file, &path_buf);
+    const path_len = try dir.realPathFile(io, file, &path_buf);
+    const path = path_buf[0..path_len];
 
-    var child = std.process.Child.init(&.{ editor, path }, alloc);
-    _ = try child.spawnAndWait();
+    var child = try std.process.spawn(io, .{ .argv = &.{ editor, path } });
+    _ = try child.wait(io);
 }
 
-pub fn fileExists(dir: std.fs.Dir, path: []const u8) bool {
+pub fn fileExists(io: std.Io, dir: std.Io.Dir, path: []const u8) bool {
     const result = blk: {
-        _ = dir.openFile(path, .{}) catch |err| {
+        var f = dir.openFile(io, path, .{}) catch |err| {
             switch (err) {
                 error.FileNotFound => break :blk false,
                 else => {
@@ -73,14 +75,15 @@ pub fn fileExists(dir: std.fs.Dir, path: []const u8) bool {
                 },
             }
         };
+        f.close(io);
         break :blk true;
     };
     return result;
 }
 
-pub fn dirExists(dir: std.fs.Dir, path: []const u8) bool {
+pub fn dirExists(io: std.Io, dir: std.Io.Dir, path: []const u8) bool {
     const result = blk: {
-        _ = dir.openDir(path, .{}) catch |err| {
+        var d = dir.openDir(io, path, .{}) catch |err| {
             switch (err) {
                 error.FileNotFound => break :blk false,
                 else => {
@@ -89,6 +92,7 @@ pub fn dirExists(dir: std.fs.Dir, path: []const u8) bool {
                 },
             }
         };
+        d.close(io);
         break :blk true;
     };
     return result;
@@ -96,11 +100,11 @@ pub fn dirExists(dir: std.fs.Dir, path: []const u8) bool {
 
 ///Deletes the contents of a directory but not the directory itself.
 ///Returns the amount of files failed to be delete.
-pub fn deleteContents(dir: std.fs.Dir) !usize {
+pub fn deleteContents(io: std.Io, dir: std.Io.Dir) !usize {
     var failed: usize = 0;
     var it = dir.iterate();
-    while (try it.next()) |entry| {
-        dir.deleteTree(entry.name) catch {
+    while (try it.next(io)) |entry| {
+        dir.deleteTree(io, entry.name) catch {
             failed += 1;
         };
     }

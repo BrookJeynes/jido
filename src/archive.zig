@@ -60,7 +60,7 @@ const OperationArgs = union(Operation) {
         traversal_limit: usize,
     },
     extract: struct {
-        dest_dir: std.fs.Dir,
+        dest_dir: std.Io.Dir,
         file_logger: ?FileLogger,
     },
 };
@@ -71,13 +71,14 @@ const OperationResult = union(Operation) {
 };
 
 pub fn listArchiveContents(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    file: std.fs.File,
+    file: std.Io.File,
     archive_type: ArchiveType,
     traversal_limit: usize,
 ) !ArchiveContents {
     var buffer: [archive_buf_size]u8 = undefined;
-    var reader = file.reader(&buffer);
+    var reader = file.reader(io, &buffer);
 
     const list_args = OperationArgs{ .list = .{
         .traversal_limit = traversal_limit,
@@ -85,24 +86,25 @@ pub fn listArchiveContents(
 
     const contents = switch (archive_type) {
         .tar => try listTar(alloc, &reader.interface, traversal_limit),
-        .@"tar.gz" => (try processTarGz(alloc, &reader.interface, list_args)).list,
-        .@"tar.xz" => (try processTarXz(alloc, &reader.interface, list_args)).list,
-        .@"tar.zst" => (try processTarZst(alloc, &reader.interface, list_args)).list,
-        .zip => try listZip(alloc, file, traversal_limit),
+        .@"tar.gz" => (try processTarGz(io, alloc, &reader.interface, list_args)).list,
+        .@"tar.xz" => (try processTarXz(io, alloc, &reader.interface, list_args)).list,
+        .@"tar.zst" => (try processTarZst(io, alloc, &reader.interface, list_args)).list,
+        .zip => try listZip(io, alloc, file, traversal_limit),
     };
 
     return contents;
 }
 
 pub fn extractArchive(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    file: std.fs.File,
+    file: std.Io.File,
     archive_type: ArchiveType,
-    dest_dir: std.fs.Dir,
+    dest_dir: std.Io.Dir,
     file_logger: ?FileLogger,
 ) !ExtractionResult {
     var buffer: [archive_buf_size]u8 = undefined;
-    var reader = file.reader(&buffer);
+    var reader = file.reader(io, &buffer);
 
     const extract_args = OperationArgs{ .extract = .{
         .dest_dir = dest_dir,
@@ -110,11 +112,11 @@ pub fn extractArchive(
     } };
 
     return switch (archive_type) {
-        .tar => try extractTarImpl(alloc, &reader.interface, dest_dir, file_logger),
-        .@"tar.gz" => (try processTarGz(alloc, &reader.interface, extract_args)).extract,
-        .@"tar.xz" => (try processTarXz(alloc, &reader.interface, extract_args)).extract,
-        .@"tar.zst" => (try processTarZst(alloc, &reader.interface, extract_args)).extract,
-        .zip => try extractZipImpl(alloc, file, dest_dir, file_logger),
+        .tar => try extractTarImpl(io, alloc, &reader.interface, dest_dir, file_logger),
+        .@"tar.gz" => (try processTarGz(io, alloc, &reader.interface, extract_args)).extract,
+        .@"tar.xz" => (try processTarXz(io, alloc, &reader.interface, extract_args)).extract,
+        .@"tar.zst" => (try processTarZst(io, alloc, &reader.interface, extract_args)).extract,
+        .zip => try extractZipImpl(io, alloc, file, dest_dir, file_logger),
     };
 }
 
@@ -244,8 +246,9 @@ fn listTar(
 }
 
 fn processTarGz(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    reader: anytype,
+    reader: *std.Io.Reader,
     args: OperationArgs,
 ) !OperationResult {
     var flate_buffer: [std.compress.flate.max_window_len]u8 = undefined;
@@ -256,34 +259,35 @@ fn processTarGz(
             .list = try listTar(alloc, &decompress.reader, list_args.traversal_limit),
         },
         .extract => |extract_args| .{
-            .extract = try extractTarImpl(alloc, &decompress.reader, extract_args.dest_dir, extract_args.file_logger),
+            .extract = try extractTarImpl(io, alloc, &decompress.reader, extract_args.dest_dir, extract_args.file_logger),
         },
     };
 }
 
 fn processTarXz(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    reader: anytype,
+    reader: *std.Io.Reader,
     args: OperationArgs,
 ) !OperationResult {
-    var dcp = try std.compress.xz.decompress(alloc, reader.adaptToOldInterface());
-    defer dcp.deinit();
-    var adapter_buffer: [1024]u8 = undefined;
-    var adapter = dcp.reader().adaptToNewApi(&adapter_buffer);
+    var xz_buffer: [1 << 16]u8 = undefined;
+    var decompress = try std.compress.xz.Decompress.init(reader, alloc, &xz_buffer);
+    defer decompress.deinit();
 
     return switch (args) {
         .list => |list_args| .{
-            .list = try listTar(alloc, &adapter.new_interface, list_args.traversal_limit),
+            .list = try listTar(alloc, &decompress.reader, list_args.traversal_limit),
         },
         .extract => |extract_args| .{
-            .extract = try extractTarImpl(alloc, &adapter.new_interface, extract_args.dest_dir, extract_args.file_logger),
+            .extract = try extractTarImpl(io, alloc, &decompress.reader, extract_args.dest_dir, extract_args.file_logger),
         },
     };
 }
 
 fn processTarZst(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    reader: anytype,
+    reader: *std.Io.Reader,
     args: OperationArgs,
 ) !OperationResult {
     const window_len = std.compress.zstd.default_window_len;
@@ -299,14 +303,15 @@ fn processTarZst(
             .list = try listTar(alloc, &decompress.reader, list_args.traversal_limit),
         },
         .extract => |extract_args| .{
-            .extract = try extractTarImpl(alloc, &decompress.reader, extract_args.dest_dir, extract_args.file_logger),
+            .extract = try extractTarImpl(io, alloc, &decompress.reader, extract_args.dest_dir, extract_args.file_logger),
         },
     };
 }
 
 fn listZip(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    file: std.fs.File,
+    file: std.Io.File,
     traversal_limit: usize,
 ) !ArchiveContents {
     var entries: std.ArrayList([]const u8) = .empty;
@@ -319,7 +324,7 @@ fn listZip(
     defer seen.deinit();
 
     var buffer: [archive_buf_size]u8 = undefined;
-    var file_reader = file.reader(&buffer);
+    var file_reader = file.reader(io, &buffer);
 
     var iter = try std.zip.Iterator.init(&file_reader);
     var file_name_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -353,9 +358,10 @@ fn listZip(
 }
 
 fn extractTarImpl(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    reader: anytype,
-    dest_dir: std.fs.Dir,
+    reader: *std.Io.Reader,
+    dest_dir: std.Io.Dir,
     file_logger: ?FileLogger,
 ) !ExtractionResult {
     var files_extracted: usize = 0;
@@ -395,20 +401,21 @@ fn extractTarImpl(
         defer alloc.free(safe_path);
 
         if (tar_file.kind == .directory) {
-            try dest_dir.makePath(safe_path);
+            try dest_dir.createDirPath(io, safe_path);
             dirs_created += 1;
         } else if (tar_file.kind == .file or tar_file.kind == .sym_link) {
             if (std.fs.path.dirname(safe_path)) |parent| {
-                try dest_dir.makePath(parent);
+                try dest_dir.createDirPath(io, parent);
             }
 
             // TODO: Investigate preserving file permissions from archive
-            const out_file = try dest_dir.createFile(safe_path, .{ .exclusive = true });
-            defer out_file.close();
+            const out_file = try dest_dir.createFile(io, safe_path, .{ .exclusive = true });
+            defer out_file.close(io);
 
             var file_writer_buffer: [archive_buf_size]u8 = undefined;
-            var file_writer = out_file.writer(&file_writer_buffer);
+            var file_writer = out_file.writer(io, &file_writer_buffer);
             try iter.streamRemaining(tar_file, &file_writer.interface);
+            try file_writer.interface.flush();
 
             files_extracted += 1;
         }
@@ -422,9 +429,10 @@ fn extractTarImpl(
 }
 
 fn extractZipImpl(
+    io: std.Io,
     alloc: std.mem.Allocator,
-    file: std.fs.File,
-    dest_dir: std.fs.Dir,
+    file: std.Io.File,
+    dest_dir: std.Io.Dir,
     file_logger: ?FileLogger,
 ) !ExtractionResult {
     var files_extracted: usize = 0;
@@ -432,7 +440,7 @@ fn extractZipImpl(
     var files_skipped: usize = 0;
 
     var buffer: [archive_buf_size]u8 = undefined;
-    var file_reader = file.reader(&buffer);
+    var file_reader = file.reader(io, &buffer);
 
     var iter = try std.zip.Iterator.init(&file_reader);
     var file_name_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -465,16 +473,18 @@ fn extractZipImpl(
         defer alloc.free(safe_path);
 
         if (std.mem.endsWith(u8, file_name, "/")) {
-            try dest_dir.makePath(safe_path);
+            try dest_dir.createDirPath(io, safe_path);
             dirs_created += 1;
         } else {
             if (std.fs.path.dirname(safe_path)) |parent| {
-                try dest_dir.makePath(parent);
+                try dest_dir.createDirPath(io, parent);
             }
 
             // TODO: Investigate preserving file permissions from archive
-            const out_file = try dest_dir.createFile(safe_path, .{ .exclusive = true });
-            defer out_file.close();
+            const out_file = try dest_dir.createFile(io, safe_path, .{ .exclusive = true });
+            defer out_file.close(io);
+            var out_file_wbuf: [archive_buf_size]u8 = undefined;
+            var out_file_writer = out_file.writer(io, &out_file_wbuf);
 
             // Seek to local file header and read it to get to compressed data
             try file_reader.seekTo(entry.file_offset);
@@ -492,7 +502,7 @@ fn extractZipImpl(
                     const to_read = @min(copy_buffer.len, entry.uncompressed_size - total_read);
                     const n = try file_reader.interface.readSliceShort(copy_buffer[0..to_read]);
                     if (n == 0) break;
-                    try out_file.writeAll(copy_buffer[0..n]);
+                    try out_file_writer.interface.writeAll(copy_buffer[0..n]);
                     total_read += n;
                 }
             } else if (entry.compression_method == .deflate) {
@@ -504,11 +514,12 @@ fn extractZipImpl(
                 while (true) {
                     const n = try decompress.reader.readSliceShort(&copy_buffer);
                     if (n == 0) break;
-                    try out_file.writeAll(copy_buffer[0..n]);
+                    try out_file_writer.interface.writeAll(copy_buffer[0..n]);
                 }
             } else {
                 return error.UnsupportedCompressionMethod;
             }
+            try out_file_writer.interface.flush();
 
             files_extracted += 1;
         }

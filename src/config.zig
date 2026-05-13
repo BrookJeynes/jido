@@ -26,67 +26,69 @@ const Config = struct {
     styles: Styles = .{},
     keybinds: Keybinds = .{},
 
-    config_dir: ?std.fs.Dir = null,
+    config_dir: ?std.Io.Dir = null,
 
     ///Returned dir needs to be closed by user.
-    pub fn configDir(self: Config) !?std.fs.Dir {
+    pub fn configDir(self: Config, io: std.Io) !?std.Io.Dir {
         if (self.config_dir) |dir| {
-            return try dir.openDir(".", .{ .iterate = true });
+            return try dir.openDir(io, ".", .{ .iterate = true });
         } else return null;
     }
 
     ///Returned dir needs to be closed by user.
-    pub fn trashDir(self: Config) !?std.fs.Dir {
-        var parent = try self.configDir() orelse return null;
-        defer parent.close();
-        if (!environment.dirExists(parent, TRASH_DIR_NAME)) {
-            try parent.makeDir(TRASH_DIR_NAME);
+    pub fn trashDir(self: Config, io: std.Io) !?std.Io.Dir {
+        var parent = try self.configDir(io) orelse return null;
+        defer parent.close(io);
+        if (!environment.dirExists(io, parent, TRASH_DIR_NAME)) {
+            try parent.createDir(io, TRASH_DIR_NAME, .default_dir);
         }
 
-        return try parent.openDir(TRASH_DIR_NAME, .{ .iterate = true });
+        return try parent.openDir(io, TRASH_DIR_NAME, .{ .iterate = true });
     }
 
-    pub fn parse(self: *Config, alloc: std.mem.Allocator, app: *App) !void {
+    pub fn parse(self: *Config, io: std.Io, alloc: std.mem.Allocator, app: *App) !void {
         var dir = lbl: {
-            if (try environment.getXdgConfigHomeDir()) |home_dir| {
+            if (try environment.getXdgConfigHomeDir(io, app.env_map)) |home_dir| {
                 defer {
                     var dir = home_dir;
-                    dir.close();
+                    dir.close(io);
                 }
 
-                if (!environment.dirExists(home_dir, XDG_CONFIG_HOME_DIR_NAME)) {
-                    try home_dir.makeDir(XDG_CONFIG_HOME_DIR_NAME);
+                if (!environment.dirExists(io, home_dir, XDG_CONFIG_HOME_DIR_NAME)) {
+                    try home_dir.createDir(io, XDG_CONFIG_HOME_DIR_NAME, .default_dir);
                 }
 
                 const jido_dir = try home_dir.openDir(
+                    io,
                     XDG_CONFIG_HOME_DIR_NAME,
                     .{ .iterate = true },
                 );
                 self.config_dir = jido_dir;
 
-                if (environment.fileExists(jido_dir, CONFIG_NAME)) {
+                if (environment.fileExists(io, jido_dir, CONFIG_NAME)) {
                     break :lbl jido_dir;
                 }
                 return;
             }
 
-            if (try environment.getHomeDir()) |home_dir| {
+            if (try environment.getHomeDir(io, app.env_map)) |home_dir| {
                 defer {
                     var dir = home_dir;
-                    dir.close();
+                    dir.close(io);
                 }
 
-                if (!environment.dirExists(home_dir, HOME_DIR_NAME)) {
-                    try home_dir.makeDir(HOME_DIR_NAME);
+                if (!environment.dirExists(io, home_dir, HOME_DIR_NAME)) {
+                    try home_dir.createDir(io, HOME_DIR_NAME, .default_dir);
                 }
 
                 const jido_dir = try home_dir.openDir(
+                    io,
                     HOME_DIR_NAME,
                     .{ .iterate = true },
                 );
                 self.config_dir = jido_dir;
 
-                if (environment.fileExists(jido_dir, CONFIG_NAME)) {
+                if (environment.fileExists(io, jido_dir, CONFIG_NAME)) {
                     break :lbl jido_dir;
                 }
                 return;
@@ -95,10 +97,7 @@ const Config = struct {
             return;
         };
 
-        const config_file = try dir.openFile(CONFIG_NAME, .{});
-        defer config_file.close();
-
-        const config_str = try config_file.readToEndAlloc(alloc, 1024 * 1024 * 1024);
+        const config_str = try dir.readFileAlloc(io, CONFIG_NAME, alloc, .limited(1024 * 1024 * 1024));
         defer alloc.free(config_str);
 
         const parsed_config = try std.json.parseFromSlice(Config, alloc, config_str, .{});
@@ -109,7 +108,7 @@ const Config = struct {
 
         // Check duplicate keybinds
         {
-            var file_logger = FileLogger.init(dir);
+            var file_logger = FileLogger.init(io, dir);
             defer file_logger.deinit();
 
             var key_map = std.AutoHashMap(u21, []const u8).init(alloc);

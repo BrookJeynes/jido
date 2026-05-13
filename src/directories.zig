@@ -11,23 +11,24 @@ const history_len: usize = 100;
 
 const Self = @This();
 
+io: std.Io,
 alloc: std.mem.Allocator,
-dir: std.fs.Dir,
+dir: std.Io.Dir,
 path_buf: [std.fs.max_path_bytes]u8 = undefined,
 file: struct {
-    handle: ?std.fs.File = null,
+    handle: ?std.Io.File = null,
     data: [4096]u8 = undefined,
     bytes_read: usize = 0,
 } = .{},
 pdf_contents: ?[]u8 = null,
-entries: List(std.fs.Dir.Entry),
+entries: List(std.Io.Dir.Entry),
 history: CircStack(usize, history_len),
 child_entries: List([]const u8),
 searcher: fuzzig.Ascii,
 
-pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !Self {
+pub fn init(io: std.Io, alloc: std.mem.Allocator, entry_dir: ?[]const u8) !Self {
     const dir_path = if (entry_dir) |dir| dir else ".";
-    const dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
+    const dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch |err| {
         switch (err) {
             error.FileNotFound => {
                 std.log.err("path '{s}' could not be found.", .{dir_path});
@@ -41,9 +42,10 @@ pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !Self {
     };
 
     return Self{
+        .io = io,
         .alloc = alloc,
         .dir = dir,
-        .entries = List(std.fs.Dir.Entry).init(alloc),
+        .entries = List(std.Io.Dir.Entry).init(alloc),
         .history = CircStack(usize, history_len).init(),
         .child_entries = List([]const u8).init(alloc),
         .searcher = try fuzzig.Ascii.init(
@@ -62,13 +64,13 @@ pub fn deinit(self: *Self) void {
     self.entries.deinit();
     self.child_entries.deinit();
 
-    self.dir.close();
+    self.dir.close(self.io);
     self.searcher.deinit();
 
     if (self.pdf_contents) |contents| self.alloc.free(contents);
 }
 
-pub fn getSelected(self: *Self) !?std.fs.Dir.Entry {
+pub fn getSelected(self: *Self) !?std.Io.Dir.Entry {
     return self.entries.getSelected();
 }
 
@@ -83,19 +85,20 @@ pub fn removeSelected(self: *Self) void {
 }
 
 pub fn fullPath(self: *Self, relative_path: []const u8) ![]const u8 {
-    return try self.dir.realpath(relative_path, &self.path_buf);
+    const len = try self.dir.realPathFile(self.io, relative_path, &self.path_buf);
+    return self.path_buf[0..len];
 }
 
-pub fn getDirSize(self: Self, dir: std.fs.Dir) !usize {
+pub fn getDirSize(self: Self, dir: std.Io.Dir) !usize {
     var total_size: usize = 0;
 
     var walker = try dir.walk(self.alloc);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(self.io)) |entry| {
         switch (entry.kind) {
             .file => {
-                const stat = try entry.dir.statFile(entry.basename);
+                const stat = try entry.dir.statFile(self.io, entry.basename, .{});
                 total_size += stat.size;
             },
             else => {},
@@ -109,11 +112,11 @@ pub fn populateChildEntries(
     self: *Self,
     relative_path: []const u8,
 ) !void {
-    var dir = try self.dir.openDir(relative_path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try self.dir.openDir(self.io, relative_path, .{ .iterate = true });
+    defer dir.close(self.io);
 
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(self.io)) |entry| {
         if (std.mem.startsWith(u8, entry.name, ".") and config.show_hidden == false) {
             continue;
         }
@@ -132,7 +135,7 @@ pub fn populateChildEntries(
 
 pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
     var it = self.dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(self.io)) |entry| {
         const score = self.searcher.score(entry.name, fuzzy_search) orelse 0;
         if (fuzzy_search.len > 0 and score < 1) {
             continue;
@@ -144,12 +147,13 @@ pub fn populateEntries(self: *Self, fuzzy_search: []const u8) !void {
 
         try self.entries.append(.{
             .kind = entry.kind,
+            .inode = entry.inode,
             .name = if (entry.kind == .directory) try std.fmt.allocPrint(self.alloc, "{s}/", .{entry.name}) else try self.alloc.dupe(u8, entry.name),
         });
     }
 
     if (config.sort_dirs == true) {
-        std.mem.sort(std.fs.Dir.Entry, self.entries.all(), {}, sort.sortDirectoryEntry);
+        std.mem.sort(std.Io.Dir.Entry, self.entries.all(), {}, sort.sortDirectoryEntry);
     }
 }
 
@@ -171,22 +175,23 @@ const testing = std.testing;
 
 test "Directories: populateEntries respects show_hidden config" {
     const local_config = &@import("./config.zig").config;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
     {
-        const visible = try tmp.dir.createFile("visible.txt", .{});
-        visible.close();
-        const hidden = try tmp.dir.createFile(".hidden.txt", .{});
-        hidden.close();
+        var visible = try tmp.dir.createFile(io, "visible.txt", .{});
+        visible.close(io);
+        var hidden = try tmp.dir.createFile(io, ".hidden.txt", .{});
+        hidden.close(io);
     }
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp_path = try tmp.dir.realpath(".", &path_buf);
-    const iter_dir = try std.fs.openDirAbsolute(tmp_path, .{ .iterate = true });
+    const tmp_path_len = try tmp.dir.realPathFile(io, ".", &path_buf);
+    const iter_dir = try std.Io.Dir.openDirAbsolute(io, path_buf[0..tmp_path_len], .{ .iterate = true });
 
-    var dirs = try Self.init(testing.allocator, null);
+    var dirs = try Self.init(io, testing.allocator, null);
     defer {
         dirs.clearEntries();
         dirs.clearChildEntries();
@@ -194,7 +199,7 @@ test "Directories: populateEntries respects show_hidden config" {
         dirs.child_entries.deinit();
         dirs.searcher.deinit();
     }
-    dirs.dir.close();
+    dirs.dir.close(io);
     dirs.dir = iter_dir;
 
     local_config.show_hidden = false;
@@ -208,23 +213,25 @@ test "Directories: populateEntries respects show_hidden config" {
 }
 
 test "Directories: fuzzy search filters entries" {
+    const io = testing.io;
+
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
 
     {
-        const f1 = try tmp.dir.createFile("test_file.txt", .{});
-        f1.close();
-        const f2 = try tmp.dir.createFile("other.txt", .{});
-        f2.close();
-        const f3 = try tmp.dir.createFile("test_another.txt", .{});
-        f3.close();
+        var f1 = try tmp.dir.createFile(io, "test_file.txt", .{});
+        f1.close(io);
+        var f2 = try tmp.dir.createFile(io, "other.txt", .{});
+        f2.close(io);
+        var f3 = try tmp.dir.createFile(io, "test_another.txt", .{});
+        f3.close(io);
     }
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const tmp_path = try tmp.dir.realpath(".", &path_buf);
-    const iter_dir = try std.fs.openDirAbsolute(tmp_path, .{ .iterate = true });
+    const tmp_path_len = try tmp.dir.realPathFile(io, ".", &path_buf);
+    const iter_dir = try std.Io.Dir.openDirAbsolute(io, path_buf[0..tmp_path_len], .{ .iterate = true });
 
-    var dirs = try Self.init(testing.allocator, null);
+    var dirs = try Self.init(io, testing.allocator, null);
     defer {
         dirs.clearEntries();
         dirs.clearChildEntries();
@@ -232,7 +239,7 @@ test "Directories: fuzzy search filters entries" {
         dirs.child_entries.deinit();
         dirs.searcher.deinit();
     }
-    dirs.dir.close();
+    dirs.dir.close(io);
     dirs.dir = iter_dir;
 
     try dirs.populateEntries("test");
@@ -246,7 +253,8 @@ test "Directories: fuzzy search filters entries" {
 }
 
 test "Directories: fullPath resolves relative paths" {
-    var dirs = try Self.init(testing.allocator, ".");
+    const io = testing.io;
+    var dirs = try Self.init(io, testing.allocator, ".");
     defer dirs.deinit();
 
     const path = try dirs.fullPath(".");

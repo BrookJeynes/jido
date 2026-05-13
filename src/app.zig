@@ -91,6 +91,8 @@ const image_cache_cap = 100;
 
 const App = @This();
 
+io: std.Io,
+env_map: *std.process.Environ.Map,
 alloc: std.mem.Allocator,
 should_quit: bool,
 vx: vaxis.Vaxis = undefined,
@@ -111,7 +113,7 @@ file_logger: ?FileLogger = null,
 text_input: vaxis.widgets.TextInput,
 text_input_buf: [std.fs.max_path_bytes]u8 = undefined,
 
-yanked: ?struct { dir: []const u8, entry: std.fs.Dir.Entry } = null,
+yanked: ?struct { dir: []const u8, entry: struct { kind: std.Io.File.Kind, name: []const u8 } } = null,
 last_known_height: usize,
 
 // Used to detect whether to re-render an image.
@@ -123,8 +125,8 @@ last_item_path: []u8 = "",
 images: Image.Cache,
 preview_cache: Preview.PreviewCache,
 
-pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
-    var vx = try vaxis.init(alloc, .{
+pub fn init(io: std.Io, alloc: std.mem.Allocator, env_map: *std.process.Environ.Map, entry_dir: ?[]const u8) !App {
+    var vx = try vaxis.init(io, alloc, env_map, .{
         .kitty_keyboard_flags = .{
             .report_text = false,
             .disambiguate = false,
@@ -138,10 +140,12 @@ pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
     try help_menu.fromArray(&help_menu_items);
 
     var app: App = .{
+        .io = io,
+        .env_map = env_map,
         .alloc = alloc,
         .should_quit = false,
         .vx = vx,
-        .directories = try Directories.init(alloc, entry_dir),
+        .directories = try Directories.init(io, alloc, entry_dir),
         .help_menu = help_menu,
         .text_input = vaxis.widgets.TextInput.init(alloc),
         .actions = CircStack(Action, actions_len).init(),
@@ -149,11 +153,9 @@ pub fn init(alloc: std.mem.Allocator, entry_dir: ?[]const u8) !App {
         .images = .{ .cache = .init(alloc) },
         .preview_cache = Preview.PreviewCache.init(alloc),
     };
-    app.tty = try vaxis.Tty.init(&app.tty_buffer);
-    app.loop = vaxis.Loop(Event){
-        .vaxis = &app.vx,
-        .tty = &app.tty,
-    };
+    app.tty = try vaxis.Tty.init(io, &app.tty_buffer);
+    app.loop = vaxis.Loop(Event).init(io, &app.tty, &app.vx);
+    app.notification.io = io;
 
     return app;
 }
@@ -258,12 +260,12 @@ pub fn run(self: *App) !void {
     defer self.loop.stop();
 
     try self.vx.enterAltScreen(self.tty.writer());
-    try self.vx.queryTerminal(self.tty.writer(), 1 * std.time.ns_per_s);
+    try self.vx.queryTerminal(self.tty.writer(), std.Io.Duration.fromSeconds(1));
     self.vx.caps.kitty_graphics = true;
 
     while (!self.should_quit) {
-        self.loop.pollEvent();
-        while (self.loop.tryEvent()) |event| {
+        try self.loop.pollEvent();
+        while (try self.loop.tryEvent()) |event| {
             const selected = self.directories.getSelected() catch |err| err: {
                 const message = try std.fmt.allocPrint(self.alloc, "Can not display file - {}", .{err});
                 defer self.alloc.free(message);
@@ -315,16 +317,16 @@ pub fn run(self: *App) !void {
     if (config.empty_trash_on_exit) {
         var trash_dir = dir: {
             notfound: {
-                break :dir (config.trashDir() catch break :notfound) orelse break :notfound;
+                break :dir (config.trashDir(self.io) catch break :notfound) orelse break :notfound;
             }
             if (self.file_logger) |file_logger| file_logger.write("Failed to open trash directory.", .err) catch {
                 std.log.err("Failed to open trash directory.", .{});
             };
             return;
         };
-        defer trash_dir.close();
+        defer trash_dir.close(self.io);
 
-        const failed = environment.deleteContents(trash_dir) catch |err| {
+        const failed = environment.deleteContents(self.io, trash_dir) catch |err| {
             const message = try std.fmt.allocPrint(self.alloc, "Failed to empty trash - {}.", .{err});
             defer self.alloc.free(message);
             if (self.file_logger) |file_logger| file_logger.write(message, .err) catch {

@@ -5,7 +5,7 @@ const vaxis = @import("vaxis");
 const App = @import("app.zig");
 
 pub const Cache = struct {
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = .init,
     cache: std.StringHashMap(Image),
 };
 
@@ -49,11 +49,11 @@ pub fn processImage(alloc: std.mem.Allocator, app: *App, path: []const u8) error
         app,
         path,
     }) catch {
-        app.images.mutex.lock();
+        app.images.mutex.lockUncancelable(app.io);
         if (app.images.cache.getPtr(path)) |entry| {
             entry.status = .failed;
         }
-        app.images.mutex.unlock();
+        app.images.mutex.unlock(app.io);
 
         const message = try std.fmt.allocPrint(alloc, "Failed to load image '{s}' - error occurred while attempting to spawn processing thread.", .{path});
         defer alloc.free(message);
@@ -67,12 +67,12 @@ pub fn processImage(alloc: std.mem.Allocator, app: *App, path: []const u8) error
 
 fn loadImage(alloc: std.mem.Allocator, app: *App, path: []const u8) error{OutOfMemory}!void {
     var buf: [(1024 * 1024) * 5]u8 = undefined; // 5mb
-    const data = vaxis.zigimg.Image.fromFilePath(alloc, path, &buf) catch {
-        app.images.mutex.lock();
+    const data = vaxis.zigimg.Image.fromFilePath(alloc, app.io, path, &buf) catch {
+        app.images.mutex.lockUncancelable(app.io);
         if (app.images.cache.getPtr(path)) |entry| {
             entry.status = .failed;
         }
-        app.images.mutex.unlock();
+        app.images.mutex.unlock(app.io);
 
         const message = try std.fmt.allocPrint(alloc, "Failed to load image '{s}' - error occurred while attempting to read image from path.", .{path});
         defer alloc.free(message);
@@ -82,7 +82,7 @@ fn loadImage(alloc: std.mem.Allocator, app: *App, path: []const u8) error{OutOfM
         return;
     };
 
-    app.images.mutex.lock();
+    app.images.mutex.lockUncancelable(app.io);
     if (app.images.cache.getPtr(path)) |entry| {
         entry.status = .ready;
         entry.data = data;
@@ -94,7 +94,7 @@ fn loadImage(alloc: std.mem.Allocator, app: *App, path: []const u8) error{OutOfM
         if (app.file_logger) |file_logger| file_logger.write(message, .err) catch {};
         return;
     }
-    app.images.mutex.unlock();
+    app.images.mutex.unlock(app.io);
 
-    app.loop.postEvent(.image_ready);
+    app.loop.postEvent(.image_ready) catch {};
 }

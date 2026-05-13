@@ -45,21 +45,16 @@ const Options = struct {
     }
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) {
-            std.log.err("memory leak", .{});
-        }
-    }
-    const alloc = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const alloc = init.gpa;
 
     var last_dir: ?[]const u8 = null;
     var entry_path_buf: [std.fs.max_path_bytes]u8 = undefined;
 
     var opts = Options{};
-    var args = std.process.args();
+    var args = try init.minimal.args.iterateAllocator(alloc);
+    defer args.deinit();
     _ = args.skip();
     while (args.next()) |arg| {
         switch (Options.optKind(arg)) {
@@ -88,9 +83,9 @@ pub fn main() !void {
                     opts.@"choose-dir" = true;
                 } else if (std.mem.eql(u8, opt, "entry-dir")) {
                     const path = if (std.mem.eql(u8, val, "")) "." else val;
-                    var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
-                    defer dir.close();
-                    opts.@"entry-path" = resolvePath(&entry_path_buf, path, dir);
+                    var dir = try std.Io.Dir.cwd().openDir(io, ".", .{ .iterate = true });
+                    defer dir.close(io);
+                    opts.@"entry-path" = resolvePath(io, init.environ_map, &entry_path_buf, path, dir);
                 }
             },
             .positional => {
@@ -111,13 +106,13 @@ pub fn main() !void {
     }
 
     {
-        var app = App.init(alloc, opts.@"entry-path") catch {
+        var app = App.init(io, alloc, init.environ_map, opts.@"entry-path") catch {
             vaxis.recover();
             std.process.exit(1);
         };
         defer app.deinit();
 
-        config.parse(alloc, &app) catch |err| switch (err) {
+        config.parse(io, alloc, &app) catch |err| switch (err) {
             error.SyntaxError => {
                 app.notification.write("Encountered a syntax error while parsing the config file.", .err) catch {
                     std.log.err("Encountered a syntax error while parsing the config file.", .{});
@@ -141,7 +136,7 @@ pub fn main() !void {
             },
         };
 
-        app.file_logger = if (config.config_dir) |dir| FileLogger.init(dir) else logger: {
+        app.file_logger = if (config.config_dir) |dir| FileLogger.init(io, dir) else logger: {
             std.log.err("Failed to initialise file logger - no config directory found", .{});
             break :logger null;
         };
@@ -158,7 +153,7 @@ pub fn main() !void {
     // the screen.
     if (last_dir) |path| {
         var stdout_buffer: [std.fs.max_path_bytes]u8 = undefined;
-        var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+        var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
         const stdout = &stdout_writer.interface;
         stdout.print("{s}\n", .{path}) catch {};
         stdout.flush() catch {};

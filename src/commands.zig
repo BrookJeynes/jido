@@ -71,7 +71,7 @@ pub const CommandHistory = struct {
 pub fn config(app: *App) error{OutOfMemory}!void {
     const dir = dir: {
         notfound: {
-            break :dir (user_config.configDir() catch break :notfound) orelse break :notfound;
+            break :dir (user_config.configDir(app.io) catch break :notfound) orelse break :notfound;
         }
         const message = try std.fmt.allocPrint(app.alloc, "Failed to navigate to config directory - unable to retrieve config directory.", .{});
         defer app.alloc.free(message);
@@ -80,7 +80,7 @@ pub fn config(app: *App) error{OutOfMemory}!void {
         return;
     };
 
-    app.directories.dir.close();
+    app.directories.dir.close(app.io);
     app.directories.dir = dir;
     try app.repopulateDirectory("");
 }
@@ -89,7 +89,7 @@ pub fn config(app: *App) error{OutOfMemory}!void {
 pub fn trash(app: *App) error{OutOfMemory}!void {
     const dir = dir: {
         notfound: {
-            break :dir (user_config.trashDir() catch break :notfound) orelse break :notfound;
+            break :dir (user_config.trashDir(app.io) catch break :notfound) orelse break :notfound;
         }
         const message = try std.fmt.allocPrint(app.alloc, "Failed to navigate to trash directory - unable to retrieve trash directory.", .{});
         defer app.alloc.free(message);
@@ -98,7 +98,7 @@ pub fn trash(app: *App) error{OutOfMemory}!void {
         return;
     };
 
-    app.directories.dir.close();
+    app.directories.dir.close(app.io);
     app.directories.dir = dir;
     try app.repopulateDirectory("");
 }
@@ -110,16 +110,16 @@ pub fn emptyTrash(app: *App) error{OutOfMemory}!void {
 
     var dir = dir: {
         notfound: {
-            break :dir (user_config.trashDir() catch break :notfound) orelse break :notfound;
+            break :dir (user_config.trashDir(app.io) catch break :notfound) orelse break :notfound;
         }
         message = try std.fmt.allocPrint(app.alloc, "Failed to navigate to trash directory - unable to retrieve trash directory.", .{});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
-    defer dir.close();
+    defer dir.close(app.io);
 
-    const failed = environment.deleteContents(dir) catch |err| lbl: {
+    const failed = environment.deleteContents(app.io, dir) catch |err| lbl: {
         message = try std.fmt.allocPrint(app.alloc, "Failed to empty trash - {}.", .{err});
         app.notification.write(message.?, .err) catch {};
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
@@ -134,18 +134,21 @@ pub fn emptyTrash(app: *App) error{OutOfMemory}!void {
     try app.repopulateDirectory("");
 }
 
-pub fn resolvePath(buf: *[std.fs.max_path_bytes]u8, path: []const u8, dir: std.fs.Dir) []const u8 {
+pub fn resolvePath(io: std.Io, env_map: *const std.process.Environ.Map, buf: *[std.fs.max_path_bytes]u8, path: []const u8, dir: std.Io.Dir) []const u8 {
     const resolved_path = if (std.mem.startsWith(u8, path, "~")) path: {
-        var home_dir = (environment.getHomeDir() catch break :path path) orelse break :path path;
-        defer home_dir.close();
+        var home_dir = (environment.getHomeDir(io, env_map) catch break :path path) orelse break :path path;
+        defer home_dir.close(io);
         const relative = std.mem.trim(u8, path[1..], std.fs.path.sep_str);
-        return home_dir.realpath(
+        const len = home_dir.realPathFile(
+            io,
             if (relative.len == 0) "." else relative,
             buf,
-        ) catch path;
+        ) catch break :path path;
+        return buf[0..len];
     } else path;
 
-    return dir.realpath(resolved_path, buf) catch path;
+    const len = dir.realPathFile(io, resolved_path, buf) catch return path;
+    return buf[0..len];
 }
 
 ///Change directory.
@@ -154,9 +157,9 @@ pub fn cd(app: *App, path: []const u8) error{OutOfMemory}!void {
     defer if (message) |msg| app.alloc.free(msg);
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const resolved_path = resolvePath(&path_buf, path, app.directories.dir);
+    const resolved_path = resolvePath(app.io, app.env_map, &path_buf, path, app.directories.dir);
 
-    const dir = app.directories.dir.openDir(resolved_path, .{ .iterate = true }) catch |err| {
+    const dir = app.directories.dir.openDir(app.io, resolved_path, .{ .iterate = true }) catch |err| {
         message = switch (err) {
             error.FileNotFound => try std.fmt.allocPrint(app.alloc, "Failed to navigate to '{s}' - directory does not exist.", .{resolved_path}),
             error.NotDir => try std.fmt.allocPrint(app.alloc, "Failed to navigate to '{s}' - item is not a directory.", .{resolved_path}),
@@ -166,7 +169,7 @@ pub fn cd(app: *App, path: []const u8) error{OutOfMemory}!void {
         if (app.file_logger) |file_logger| file_logger.write(message.?, .err) catch {};
         return;
     };
-    app.directories.dir.close();
+    app.directories.dir.close(app.io);
     app.directories.dir = dir;
 
     message = try std.fmt.allocPrint(app.alloc, "Navigated to directory '{s}'.", .{resolved_path});
