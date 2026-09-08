@@ -1,0 +1,4 @@
+add keybind to extract archive @feat +archive
+id: xsoyruqqprntzsps
+
+Allow users to extract archives via a keybind

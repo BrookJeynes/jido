@@ -1,0 +1,5 @@
+display archive contents @feat +archive
+id: pllupumxlqntxnkv
+
+When a user scrolls past a compressed file (.tar, .zip, etc.), they should be
+able to see the top level contents.

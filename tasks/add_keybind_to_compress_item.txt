@@ -1,0 +1,4 @@
+add keybind to compress item @feat +archive
+id: orzvwkywkmyqtuzv
+
+Allow users to compress files/folders via a keybind
