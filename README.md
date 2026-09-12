@@ -10,7 +10,7 @@ purpose: helping you navigate and explore your file system with ease. With
 Vim-like bindings and a minimalist interface, Jido focuses on speed and
 simplicity.
 
-Jido is built with Zig v`0.15.2`.
+Jido is built with Zig v`0.16.0`.
 
 - [Installation](#installation)
 - [Integrations](#integrations)
